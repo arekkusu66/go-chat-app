@@ -1,0 +1,324 @@
+package routes
+
+import (
+    "fmt"
+    "gochat/models"
+	"gochat/utils"
+)
+
+
+css mentioned() {
+    background-color: rgba(238, 238, 0, 0.5);
+}
+
+
+templ yourpage(user models.User) {
+
+    if !user.Verified {
+        <h2>You need yo verify your account <a href={templ.SafeURL("/email/verification/send")}>here</a></h2>
+    }
+
+    @user_notifications(user)
+
+    
+    <h1>hello {user.Username}</h1>
+    <h2>ID: <b>{user.ID}</b></h2>
+
+    <input type="text" id="new-username" placeholder="new username" />
+    <button onclick="changeUsername()">change your username</button>
+
+    <h2 id="description">
+        if user.Description.Valid {
+            {user.Description.String}
+        }
+    </h2>
+
+    <textarea placeholder="your description" id="write-description" style="width:300px;height:150px"></textarea>
+    <button onclick="editDescription()">change your description</button>
+
+    <h3>Member since {user.Joined.Format("02.01.2006")}</h3>
+
+
+    <div id="friends">
+        <h2>Your friends:</h2>
+
+        if len(user.Friends) != 0 {
+            for _, friend := range user.Friends {
+                <p><a href={templ.SafeURL(fmt.Sprintf("/user/%s", friend.Username))}>{friend.Username}</a></p>
+            }
+        } else {
+            <p>You have no friends yet</p>
+        }
+    </div>
+
+
+    <div id="received-friend-reqs">
+
+        <h2>Received friend requests:</h2>
+
+        if len(user.ReceivedFriendReqs) != 0 {
+            for _, receivedReq := range user.ReceivedFriendReqs {
+
+                <div id={fmt.Sprintf("received-%s", receivedReq.Username)}>
+                    <p><a href={templ.SafeURL(fmt.Sprintf("/user/%s", receivedReq.Username))}>{receivedReq.Username}</a></p>>
+
+                    <button hx-post={string(templ.SafeURL(fmt.Sprintf("/user/actions?type=accept&username=%s", receivedReq.Username)))} hx-target={fmt.Sprintf("#received-%s", receivedReq.Username)} hx-swap="delete" data-type="accept-friend-req" data-target={receivedReq.Username} onclick="sendNotif(this)" style="color:lime">accept</button>
+
+                    <button hx-post={string(templ.SafeURL(fmt.Sprintf("/user/actions?type=ignore&username=%s", receivedReq.Username)))} hx-target={fmt.Sprintf("#received-%s", receivedReq.Username)} hx-swap="delete" style="color:red">ignore</button>
+                </div>
+            }
+        }
+
+    </div>
+
+
+    <div id="sent-friend-reqs">
+
+        <h2>Sent friend requests:</h2>
+
+        if len(user.SentFriendReqs) != 0 {
+            for _, sentReq := range user.SentFriendReqs {
+                <p><a href={templ.SafeURL(fmt.Sprintf("/user/%s", sentReq.Username))}>{sentReq.Username}</a></p>
+
+                <button hx-post={string(templ.SafeURL(fmt.Sprintf("/user/actions?type=cancel&username=%s", sentReq.Username)))} hx-target="#friend-req-sent" hx-swap="outerHTML">cancel</button>
+            }
+        }
+
+    </div>
+
+
+    <div id="blocked-users">
+
+        <h2>Blocked users:</h2>
+
+        if len(user.BlockedUsers) != 0 {
+            for _, blockedUser := range user.BlockedUsers {
+
+                <div id={fmt.Sprintf("blocked-%s", blockedUser.Username)}>
+                    
+                    <p><a href={templ.SafeURL(fmt.Sprintf("/user/%s", blockedUser.Username))}>{blockedUser.Username}</a></p>
+
+                    <button hx-post={string(templ.SafeURL(fmt.Sprintf("/user/actions?type=unblock&username=%s", blockedUser.Username)))} hx-target={fmt.Sprintf("#blocked-%s", blockedUser.Username)} hx-swap="delete">unblock</button>
+                
+                </div>
+            }
+        }
+
+    </div>
+}
+
+
+templ not_yourpage(user, currentUser models.User) {
+
+
+    @user_notifications(currentUser)
+
+
+    <h1>This is <b>{user.Username}</b>'s page</h1>
+    <h2>ID: <b>{user.ID}</b></h2>
+
+    if user.Description.Valid {
+        <h2>{user.Description.String}</h2>
+    }
+
+    <h2>Member since {user.Joined.Format("02.01.2006")}</h2>
+
+
+    if user.CheckUserRelations(user, currentUser.BlockedUsers) {
+
+        <div id="blocked-user">
+            <h3>You blocked {user.Username}</h3>
+                
+            <button hx-post={string(templ.SafeURL(fmt.Sprintf("/user/actions?type=unblock&username=%s", user.Username)))} hx-target="#blocked-user" hx-swap="outerHTML">unblock</button>
+        </div>
+
+    } else {
+
+        switch true {
+
+            case user.CheckUserRelations(user, currentUser.SentFriendReqs):
+
+                <div id="friend-req-sent">
+                    <h3>Friend request sent to {user.Username}</h3>
+
+                    <button hx-post={string(templ.SafeURL(fmt.Sprintf("/user/actions?type=cancel&username=%s", user.Username)))} hx-target="#friend-req-sent" hx-swap="outerHTML">cancel</button>
+                </div>
+
+
+            case user.CheckUserRelations(user, currentUser.ReceivedFriendReqs):
+
+                <div id="friend-req-received">
+                    <h3>{user.Username} sent you a friend request</h3>
+
+                    <button hx-post={string(templ.SafeURL(fmt.Sprintf("/user/actions?type=accept&username=%s", user.Username)))} hx-target="#friend-req-received" hx-swap="outerHTML" style="color:lime">accept</button>
+
+                    <button hx-post={string(templ.SafeURL(fmt.Sprintf("/user/actions?type=ignore&username=%s", user.Username)))} hx-target="#friend-req-received" hx-swap="outerHTML" style="color:red">ignore</button>
+                </div>
+
+
+            case user.CheckUserRelations(user, currentUser.Friends):
+
+                <div id="friends">
+                    <h3>You are friend with {user.Username}</h3>
+
+                    <button hx-post={string(templ.SafeURL(fmt.Sprintf("/user/actions?type=block&username=%s", user.Username)))}  hx-target="#friends" hx-swap="outerHTML">block user</button>
+                </div>
+
+
+            default:
+
+                <div id="user-actions">                
+                    <button hx-post={string(templ.SafeURL(fmt.Sprintf("/user/actions?type=add&username=%s", user.Username)))} hx-target="#user-actions" hx-swap="outerHTML" onclick="sendNotif(this)" data-type="friend-req" data-target={user.Username}>send a friend request to {user.Username}</button>
+
+                    <button hx-post={string(templ.SafeURL(fmt.Sprintf("/user/actions?type=block&username=%s", user.Username)))} hx-target="#user-actions" hx-swap="outerHTML">block user</button>
+                </div>
+        }
+    }
+
+
+    if !user.CheckUserRelations(user, currentUser.BlockedUsers) {
+        <div>
+
+            if !user.CheckUserRelations(currentUser, user.DMedUsers) || !user.CheckUserRelations(user, currentUser.DMedUsers) {
+
+                <button hx-post={string(templ.SafeURL(fmt.Sprintf("/user/actions?type=senddm&username=%s", user.Username)))} hx-swap="none" onclick="sendNotif(this)" data-type="dm-req" data-target={user.Username}>Send a message to {user.Username}</button>
+
+            } else {
+
+                if user.GetDMid(currentUser) != 0 {
+                    <a href={templ.SafeURL(fmt.Sprintf("/dm/%d", user.GetDMid(currentUser)))}>Message {user.Username}</a>
+                } else {
+                    <a onclick="sendNotif(this)" data-type="friend-req" data-target={user.Username} href={templ.SafeURL(fmt.Sprintf("/dm/%d", currentUser.GetDMid(user)))}>Message {user.Username}</a>
+                }
+
+            }
+
+        </div>
+
+    }
+}
+
+
+templ user_chats(chatType []models.ChatRoom, title string, noChatsMsg string, isMadeByUser bool) {
+    <h1>{title}</h1>
+
+    if len(chatType) == 0 {
+        <h3>{noChatsMsg}</h3>
+    } else {
+        <ul>
+            for _, chatroom := range chatType {
+                if isMadeByUser {
+                    <li><a href={ templ.SafeURL(fmt.Sprintf("/chat/%d", chatroom.ID)) }>{chatroom.Title}-</a></li>
+                } else {
+                    <li><a href={ templ.SafeURL(fmt.Sprintf("/chat/%d", chatroom.ID)) }>{chatroom.Title}</a> by {chatroom.CreatedByName}</li>
+                }
+            }
+        </ul>
+    }
+}
+
+
+templ message_user(message models.Message, user models.User, thereIsChatOP bool) {
+    <div class={templ.KV(mentioned(), utils.IsReply(user, message.ReplyID))} id={fmt.Sprintf("message-c-%d", message.ID)}>
+
+
+    if thereIsChatOP {
+        if message.UserID == message.ChatOp.String {
+            <h5 style="color:blue">{message.User.Username} - OP</h5>
+        } else {
+            <h5 style="color:rgb(176, 6, 6)">{message.User.Username}</h5>
+        }
+    } else {
+        <h5 style="color:green">{message.User.Username}</h5>
+    }
+
+
+    <div><button onclick="getOptions(this)" data-id={fmt.Sprint(message.ID)}>options</button></div>
+    <div id={fmt.Sprintf("options-%d", message.ID)} class="msg-options"></div>
+
+
+    if message.ReplyID != 0 {
+
+        if message.ReplyStatus == "deleted" {
+            <div><i style="color:red">Reply to deleted message</i></div>
+        } else {
+            <div id={fmt.Sprintf("reply-%d", message.ReplyID)} class="replies"><a href={templ.SafeURL(fmt.Sprintf("#message-%d", message.ReplyID))}>reply to {message.Reply.Text}</a></div>
+        }
+    }
+
+    <h3 id={fmt.Sprintf("message-%d", message.ID)}>{message.Text}</h3>
+    <i>at {message.Date.Format("02.01.2006 15:04")}</i>
+    <hr />
+
+    </div>
+}
+
+
+templ already_joined(chatDatas models.ChatDatas) {
+
+    if !chatDatas.User.Verified {
+
+        <h2>Your account is not verified yet, you may want to verify it <a href={templ.SafeURL("/email/verification/send")}>here</a></h2>
+
+    } else {
+        
+        <div id="already-joined">
+
+            if chatDatas.User.ID != chatDatas.ChatRoom.CreatedBy {
+                <button hx-post={string(templ.SafeURL(fmt.Sprintf("/leave/chat/%d", chatDatas.ChatRoom.ID)))} hx-target="#already-joined">leave this chat</button>
+                <hr />
+            }
+
+            <div id="reply">
+                <div id="id-reply"></div>
+            </div>
+
+            <br />
+            <br />
+            <input type="text" id="send" placeholder="write a message" style="width:300px;height:30px" />
+            <button onclick="sendMsg()" style="width:60px;height:35px">send</button>
+
+        </div>
+    }
+}
+
+
+templ not_joined(chatDatas models.ChatDatas) {
+    if chatDatas.User.Verified {
+        <div id="not-joined">
+
+            <h3>join this chat!</h3>
+            <button hx-post={string(templ.SafeURL(fmt.Sprintf("/join/chat/%d", chatDatas.ChatRoom.ID)))} hx-target="#not-joined">click to join</button>
+
+        </div>
+    } else {
+        <h2>Your account is not verified yet, go <a href={templ.SafeURL("/email/verification/send")}>here</a> to verify it</h2>
+    }
+}
+
+
+templ dm_accepted() {
+    <div id="dm-accepted">
+
+        <div id="reply">
+            <div id="id-reply"></div>
+        </div>
+
+        <br />
+        <br />
+        <input type="text" id="send" placeholder="write a message" style="width:300px;height:30px" />
+        <button onclick="sendMsg()" style="width:60px;height:35px">send</button>
+
+    </div>
+}
+
+
+templ dm_not_accepted(dm models.DM) {
+    <div id="dm-not-accepted">
+
+        <button hx-post={string(templ.SafeURL(fmt.Sprintf("/dm/action?type=accept&id=%d", dm.ID)))} hx-target="#dm-not-accepted" style="color:lime">accept</button>
+
+        <button hx-post={string(templ.SafeURL(fmt.Sprintf("/dm/action?type=reject&id=%d", dm.ID)))} hx-target="#dm-not-accepted" style="color:red">ignore</button>
+
+    </div>
+}

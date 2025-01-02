@@ -1,0 +1,40 @@
+package routes
+
+import "gochat/models"
+import "fmt"
+
+
+css notifications() {
+    width: 300px;
+    height: 100px;
+    position: absolute;
+    top: 0;
+    right: 0;
+    padding: 10px;
+}
+
+
+css unreads() {
+    background-color: rgba(255, 0, 0, 0.5);
+}
+
+
+templ user_notifications(user models.User) {
+    <script src="/script/notifclient.js" defer />
+    <script src="/script/scripts.js" defer />
+
+    <div id="notifications" class={notifications(), templ.KV(unreads(), user.AreThereUnreadNotifs())}>
+        <button onclick="showNotifications()">Show</button>
+
+        <p>
+            Notifications
+            <b id="notif-count">
+                if user.UnreadNotifsCount() != 0 {
+                    {fmt.Sprint(user.UnreadNotifsCount())}
+                }
+            </b>
+        </p>
+
+        <div id="notif-c"></div>
+    </div>
+}
