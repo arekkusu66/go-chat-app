@@ -1,1 +1,0 @@
-A somewhat working chat application made in go
