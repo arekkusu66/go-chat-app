@@ -14,9 +14,6 @@ import (
 )
 
 
-var mu sync.Mutex
-
-
 func MSGWS(w http.ResponseWriter, r *http.Request, clients map[*websocket.Conn]string, isItChatRoom bool) {
 	conn, err := utils.Wupg.Upgrade(w, r, nil)
 
@@ -24,6 +21,8 @@ func MSGWS(w http.ResponseWriter, r *http.Request, clients map[*websocket.Conn]s
 		fmt.Println(err)
 		return
 	}
+
+	var mu sync.Mutex
 
 	defer func() {
 		mu.Lock()
@@ -101,6 +100,7 @@ func DELWS(w http.ResponseWriter, r *http.Request, clients map[*websocket.Conn]s
 		return
 	}
 
+	var mu sync.Mutex
 
 	defer func() {
 		mu.Lock()
@@ -145,6 +145,8 @@ func NOTIFWS(w http.ResponseWriter, r *http.Request, clients map[*websocket.Conn
 		fmt.Println(err)
 		return
 	}
+
+	var mu sync.Mutex
 
 	defer func() {
 		mu.Lock()
