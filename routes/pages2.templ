@@ -322,3 +322,30 @@ templ dm_not_accepted(dm models.DM) {
 
     </div>
 }
+
+
+templ settings(settingQuestion, yesID, noID, name string, checked bool) {
+    <div>
+        <h3>{settingQuestion}</h3>
+
+        <div>
+            if checked {
+                <input type="radio" id={yesID} name={name} value="yes" checked />
+            } else {
+                <input type="radio" id={yesID} name={name} value="yes" />
+            }
+
+            <label for={yesID}>Yes</label>
+        </div>
+
+        <div>
+            if !checked {
+                <input type="radio" id={noID} name={name} value="no" checked />
+            } else {
+                <input type="radio" id={noID} name={name} value="no" />
+            }
+
+            <label for={noID}>No</label>
+        </div>
+    </div>
+}

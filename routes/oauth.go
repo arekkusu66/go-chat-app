@@ -89,6 +89,10 @@ func OauthCredsH(w http.ResponseWriter, r *http.Request) {
 				NotifFrom: "app",
 			},
 		},
+		Settings: models.Setting{
+			AcceptsFriendReqs: true,
+			AcceptsDMReqs: true,
+		},
 	}
 
 

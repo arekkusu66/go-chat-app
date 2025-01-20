@@ -9,6 +9,10 @@ import (
 
 func (u *User) Add(targetUser *User, w http.ResponseWriter) {
 	switch true {
+		case !targetUser.Settings.AcceptsFriendReqs:
+			http.Error(w, "user doesnt accept friend requests", http.StatusBadRequest)
+			return
+
 		case u.CheckUserRelations(*u, targetUser.BlockedUsers):
 			w.WriteHeader(http.StatusBadRequest)
 			return
@@ -131,6 +135,10 @@ func (u *User) Unblock(targetUser *User, w http.ResponseWriter) {
 
 func (u *User) SendDM(targetUser *User, w http.ResponseWriter) {
 	switch true {
+		case !targetUser.Settings.AcceptsDMReqs:
+			http.Error(w, "user doesnt accept dm requests", http.StatusBadRequest)
+			return
+
 		case u.CheckUserRelations(*u, targetUser.BlockedUsers):
 			w.WriteHeader(http.StatusBadRequest)
 			return

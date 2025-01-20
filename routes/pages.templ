@@ -3,6 +3,7 @@ package routes
 import (
     "gochat/models"
     "fmt"
+	"gochat/types"
 )
 
 
@@ -290,4 +291,36 @@ templ oauth_creds() {
 
     <input type="text" id="new-username" placeholder="your username" />
     <button onclick="changeUsername()">Submit</button>
+}
+
+
+templ user_settings(user models.User) {
+    <p>{fmt.Sprint(user.Settings.AcceptsFriendReqs)}</p>
+
+
+    <form method="POST" action="/settings" accept-charset="utf-8">
+        <fieldset>
+            <legend>Socials</legend>
+
+            @settings(
+                "Accept friend requests from anyone?",
+                "friend-reqs-yes",
+                "friend-reqs-no",
+                types.ACCEPT_FRIEND_REQ,
+                user.Settings.AcceptsFriendReqs,
+            )
+
+
+            @settings(
+                "Accept dm requests from anyone?",
+                "dm-reqs-yes",
+                "dm-reqs-no",
+                types.DM_REQ,
+                user.Settings.AcceptsDMReqs,
+            )
+
+        </fieldset>
+
+        <button type="submit">Save settings</button>
+    </form>
 }

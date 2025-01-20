@@ -23,6 +23,7 @@ func InitDB() error {
 		&Notification{}, 
 		&User{}, 
 		&AuthVerification{},
+		&Setting{},
 		
 		); 
 		err != nil {	

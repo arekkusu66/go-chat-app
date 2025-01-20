@@ -2,6 +2,7 @@ package utils
 
 import (
 	crrand "crypto/rand"
+	"errors"
 	"fmt"
 	"gochat/models"
 	"gochat/types"
@@ -127,5 +128,19 @@ func Validate(credType, cred string) bool {
 
 		default:
 			return false
+	}
+}
+
+
+func SettingMod(r *http.Request, user models.User, settingType, dbField string) error {
+	switch r.PostFormValue(settingType) {
+		case "yes":
+			models.DB.Model(&models.Setting{}).Where("user_id = ?", user.ID).Update(dbField, true)
+			return nil
+		case "no":
+			models.DB.Model(&models.Setting{}).Where("user_id = ?", user.ID).Update(dbField, false)
+			return nil
+		default:
+			return errors.New("invalid action")
 	}
 }

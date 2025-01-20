@@ -32,7 +32,7 @@ func SignUpH(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method == http.MethodPost {
 		if err := r.ParseForm(); err != nil {
-			http.Error(w, "an error occured while trying to parse the datas", http.StatusInternalServerError)
+			http.Error(w, "couldnt get the datas from the form", http.StatusInternalServerError)
 			return
 		}
 
@@ -82,6 +82,10 @@ func SignUpH(w http.ResponseWriter, r *http.Request) {
 					NotifFrom: "app",
 				},
 			},
+			Settings: models.Setting{
+				AcceptsFriendReqs: true,
+				AcceptsDMReqs: true,
+			},
 		}
 
 		if err := models.DB.Create(&newUser).Error; err != nil {
@@ -125,6 +129,10 @@ func SignUpH(w http.ResponseWriter, r *http.Request) {
 func LoginH(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method == http.MethodPost {
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "couldnt get the datas from the form", http.StatusInternalServerError)
+			return
+		}
 
 		var (
 			username = r.PostFormValue("username")

@@ -22,6 +22,8 @@ type User struct {
 	Description					sql.NullString		`json:"description"`
 	Joined						time.Time
 
+	Settings					Setting
+
 	SentFriendReqs				[]User				`gorm:"many2many:sent_friend_requests"`
 	ReceivedFriendReqs			[]User				`gorm:"many2many:received_friend_requests"`
 	Friends						[]User				`gorm:"many2many:user_friends"`
@@ -111,4 +113,15 @@ type AuthVerification struct {
 
 	UserID						string
 	User						User				`gorm:"primaryKey:UserID"`
+}
+
+
+type Setting struct {
+	ID							uint				`gorm:"primaryKey"`
+
+	UserID						*string
+	User						*User				`gorm:"foreignKey:UserID"`
+
+	AcceptsFriendReqs			bool
+	AcceptsDMReqs				bool
 }

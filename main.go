@@ -50,6 +50,7 @@ func main() {
 	mux.HandleFunc("POST /exists/{username}", routes.CheckAvailabilityH)
 	mux.HandleFunc("POST /edit/profile", routes.EditProfileH)
 	mux.HandleFunc("POST /user/actions", routes.UserActionsH)
+	mux.HandleFunc("/settings", routes.SettingsH)
 
 	mux.HandleFunc("/signup", routes.SignUpH)
 	mux.HandleFunc("/login", routes.LoginH)
