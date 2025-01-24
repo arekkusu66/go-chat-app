@@ -4,7 +4,7 @@ package types
 const (
 	FRIEND_REQ			=		"friend-req"
 	DM_REQ				=		"dm-req"
-	ACCEPT_FRIEND_REQ  	=		"accept-friend-req"
+	ACCEPT_FRIEND_REQ 	=		"accept-friend-req"
 
 	EMAIL_VERIFY		=		"email-verify"
 	PASSWORD_RESET		=		"password-reset"

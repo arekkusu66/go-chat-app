@@ -112,7 +112,7 @@ type AuthVerification struct {
 	Expiry						time.Time
 
 	UserID						string
-	User						User				`gorm:"primaryKey:UserID"`
+	User						User				`gorm:"foreignKey:UserID"`
 }
 
 

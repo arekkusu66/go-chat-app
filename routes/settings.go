@@ -17,11 +17,8 @@ func SettingsH(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var user models.User
+	models.DB.Preload("Settings").First(&user, "id = ?", userData.ID)
 
-	if err := models.DB.Preload("Settings").First(&user, "id = ?", userData.ID).Error; err != nil {
-		http.Error(w, "couldnt retrieve user datas", http.StatusInternalServerError)
-		return
-	}
 	
 	if r.Method == http.MethodPost {
 		if err := r.ParseForm(); err != nil {
@@ -39,6 +36,7 @@ func SettingsH(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+
 
 	user_settings(user).Render(r.Context(), w)
 }

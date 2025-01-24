@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"gochat/models"
+	"gochat/types"
 	"gochat/utils"
 	"net/http"
 	"sync"
@@ -200,7 +201,7 @@ func NOTIFWS(w http.ResponseWriter, r *http.Request, clients map[*websocket.Conn
 
 
 		switch notification.Type {
-			case "friend-req":
+			case types.FRIEND_REQ:
 				if targetUser.CheckUserRelations(targetUser, user.SentFriendReqs) {
 					return
 				}
@@ -208,7 +209,7 @@ func NOTIFWS(w http.ResponseWriter, r *http.Request, clients map[*websocket.Conn
 				notification.Message = user.Username + " sent you a friend request"
 				notification.Link = "/user/" + user.Username
 
-			case "dm-req":
+			case types.DM_REQ:
 				if targetUser.CheckUserRelations(targetUser, user.DMedUsers) {
 					return
 				}
@@ -216,7 +217,7 @@ func NOTIFWS(w http.ResponseWriter, r *http.Request, clients map[*websocket.Conn
 				notification.Message = user.Username + " sent you a message request"
 				notification.Link = fmt.Sprintf("/dm/%d", user.GetDMid(targetUser))
 
-			case "accept-friend-req":
+			case types.ACCEPT_FRIEND_REQ:
 				if targetUser.CheckUserRelations(targetUser, user.Friends) {
 					return
 				}
