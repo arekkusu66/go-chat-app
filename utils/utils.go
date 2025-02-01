@@ -46,8 +46,8 @@ func ParseCookie(r *http.Request) (*models.Claims, error) {
 }
 
 
-func IsReply(user models.User, replyID uint) bool {
-	if replyID == 0 {
+func IsReply(user models.User, replyID string) bool {
+	if replyID == "" || replyID == "0" {
 		return false
 	}
 

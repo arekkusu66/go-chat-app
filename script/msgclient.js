@@ -46,11 +46,11 @@ function sendMsg() {
 
 
 async function addMessage(message) {
-    const response = await fetch(`/get/datas?id=${message.replyId}`, {
+    const messageDatasResponse = await fetch(`/get/datas?id=${message.id}`, {
         method: 'POST'
     });
 
-    const isReply = await response.text();
+    const messageDatas = await messageDatasResponse.json();
 
     const chatOP = `<h5 style="color:${message.userId === message.chatOp.String ? 'blue' : 'rgb(177, 6, 6)'}">${message.user.username}${message.userId === message.chatOp.String ? ' - OP' : ''}</h5>`;
 
@@ -61,15 +61,23 @@ async function addMessage(message) {
 
     const msgDatas = `<h3 id="message-${message.id}"></h3><i>at ${formatDate(message.date)}</i><hr />`;
 
-    document.querySelector('#messages').innerHTML += `
-    <div ${isReply === 'true' ? `style="background-color:rgba(238, 238, 0, 0.5)"` : ''} id="message-c-${message.id}">
-        ${chatOP}
-        ${getOptions}
-        ${options}
-        ${replies}
-        ${msgDatas}
-    </div>
+    let notBlocked = `
+        <div ${messageDatas.isReply ? `style="background-color:rgba(238, 238, 0, 0.5)"` : ''} id="message-c-${message.id}">
+            ${chatOP}
+            ${getOptions}
+            ${options}
+            ${replies}
+            ${msgDatas}
+        </div>
     `;
+
+    let blocked = `
+        <div id="message-c-${message.id}">
+            <p>Message from a blocked user<button onclick="showMessage(this)" data-id="${message.id}">Show</button></p>
+        </div>
+    `;
+
+    document.querySelector('#messages').innerHTML += messageDatas.isBlocked ? blocked : notBlocked;
 
 
     document.querySelector(`#message-${message.id}`).textContent = message.text;

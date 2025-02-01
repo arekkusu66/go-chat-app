@@ -63,6 +63,52 @@ async function getOptions(button) {
 };
 
 
+async function showMessage(button) {
+    const id = button.dataset.id;
+
+    try {
+
+        const response = await fetch(`/get/message?id=${id}`, {
+            method: 'POST'
+        });
+
+
+        const message = await response.json();
+
+        const hide = `<button onclick="hideMessage(this)" data-id="${id}">Hide</button>`;
+
+        const chatOP = `<h5 style="color:${message.userId === message.chatOp.String ? 'blue' : 'rgb(177, 6, 6)'}">${message.user.username}${message.userId === message.chatOp.String ? ' - OP' : ''}</h5>`;
+
+        const replies = `${message.replyId !== 0 && message.reply ? (`<div id="reply-${message.replyId}"><a href="#message-${message.replyId}">reply to ${message.reply.text}</a></div>`) : ''}`;
+
+        const msgDatas = `<h3 id="message-${message.id}"></h3><i>at ${formatDate(message.date)}</i><hr />`;    
+
+        document.querySelector(`#message-c-${id}`).innerHTML = `
+            ${hide}
+            ${chatOP}
+            ${replies}
+            ${msgDatas}
+        `;
+
+        document.querySelector(`#message-${message.id}`).textContent = message.text;
+
+    } catch (error) {
+        console.log(error);
+    };
+};
+
+
+function hideMessage(button) {
+    const id = button.dataset.id;
+
+    document.querySelector(`#message-c-${id}`).innerHTML = `
+        <div>
+            <p>Message from a blocked user<button onclick="showMessage(this)" data-id="${id}">Show</button></p>
+        </div>
+    `;
+};
+
+
 function cancelOptions() {
     document.querySelector('#id-reply').textContent = '';
     Array.from(document.querySelectorAll('.msg-options')).map((element) => element.innerHTML = '');

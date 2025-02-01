@@ -41,6 +41,7 @@ func main() {
 	mux.HandleFunc("POST /create/chat", mw.RateLimiter(routes.CreateChatH, time.Minute))
 	mux.HandleFunc("POST /get/options", routes.GetOptionsH)
 	mux.HandleFunc("POST /get/datas", routes.GetDatasH)
+	mux.HandleFunc("POST /get/message", routes.GetMessageH)
 	mux.HandleFunc("POST /join/chat/{id}", routes.JoinChatH)
 	mux.HandleFunc("POST /leave/chat/{id}", routes.LeaveChatH)
 	mux.HandleFunc("POST /notifications", routes.NotificationsH)

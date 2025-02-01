@@ -9,7 +9,6 @@ import (
 	"gochat/utils"
 	"net/http"
 	"regexp"
-	"strconv"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -79,7 +78,7 @@ func ChatH(w http.ResponseWriter, r *http.Request) {
 	var chatroom models.ChatRoom
 	var user models.User
 
-	models.DB.Preload("CreatedChats").Preload("JoinedChats").Preload("Messages").First(&user, "id = ?", userData.ID)
+	models.DB.Preload("CreatedChats").Preload("JoinedChats").Preload("Messages").Preload("BlockedUsers").First(&user, "id = ?", userData.ID)
 	
 
 	var id = r.PathValue("id")
@@ -190,6 +189,29 @@ func GetOptionsH(w http.ResponseWriter, r *http.Request) {
 }
 
 
+func GetMessageH(w http.ResponseWriter, r *http.Request) {
+	userData, err := utils.ParseCookie(r)
+
+	if err != nil {
+		http.Error(w, "couldnt retrieve user data", http.StatusInternalServerError)
+		return
+	}
+
+	var user models.User
+	models.DB.Preload("Messages").Preload("BlockedUsers").First(&user, "id = ?", userData.ID)
+
+	var id = r.URL.Query().Get("id")
+
+	var message models.Message
+	if err := models.DB.Preload(clause.Associations).Preload("User.BlockedUsers").First(&message, id).Error; err != nil && err == gorm.ErrRecordNotFound {
+		http.Error(w, "message not found", http.StatusBadRequest)
+		return
+	}
+
+	json.NewEncoder(w).Encode(&message)
+}
+
+
 func GetDatasH(w http.ResponseWriter, r *http.Request) {
 	userData, err := utils.ParseCookie(r)
 
@@ -199,16 +221,21 @@ func GetDatasH(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var user models.User
-	models.DB.Preload("Messages").First(&user, "id = ?", userData.ID)
+	models.DB.Preload("Messages").Preload("BlockedUsers").First(&user, "id = ?", userData.ID)
 
-	var replyID = r.URL.Query().Get("id")
 
-	intid, err := strconv.Atoi(replyID)
+	var id = r.URL.Query().Get("id")
 
-	if err != nil {
-		w.Write([]byte("false"))
+	var message models.Message
+	if err := models.DB.Preload("User.BlockedUsers").First(&message, id).Error; err != nil && err == gorm.ErrRecordNotFound {
+		json.NewEncoder(w).Encode(&models.MessageDatas{IsReply: false, IsBlocked: false})
 		return
 	}
 
-	w.Write([]byte(fmt.Sprint(utils.IsReply(user, uint(intid)))))
+	var messageDatas = models.MessageDatas{
+		IsReply: utils.IsReply(user, fmt.Sprint(message.ReplyID)),
+		IsBlocked: user.CheckUserRelations(message.User, user.BlockedUsers),
+	}
+
+	json.NewEncoder(w).Encode(&messageDatas)
 }

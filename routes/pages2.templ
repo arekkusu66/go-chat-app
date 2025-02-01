@@ -219,48 +219,55 @@ templ user_chats(chatType []models.ChatRoom, title string, noChatsMsg string, is
 
 
 templ message_user(message models.Message, user models.User, thereIsChatOP bool) {
-    <div class={templ.KV(mentioned(), utils.IsReply(user, message.ReplyID))} id={fmt.Sprintf("message-c-%d", message.ID)}>
+    if user.CheckUserRelations(message.User, user.BlockedUsers) {
 
+        <div id={fmt.Sprintf("message-c-%d", message.ID)}>
+            <p>Message from a blocked user<button onclick="showMessage(this)" data-id={fmt.Sprint(message.ID)}>Show</button></p>
+        </div>
 
-    if thereIsChatOP {
-        if message.UserID == message.ChatOp.String {
-            <h5 style="color:blue">{message.User.Username} - OP</h5>
-        } else {
-            <h5 style="color:rgb(176, 6, 6)">{message.User.Username}</h5>
-        }
     } else {
-        <h5 style="color:green">{message.User.Username}</h5>
-    }
+        <div class={templ.KV(mentioned(), utils.IsReply(user, fmt.Sprint(message.ReplyID)))} id={fmt.Sprintf("message-c-%d", message.ID)}>
 
 
-    <div><button onclick="getOptions(this)" data-id={fmt.Sprint(message.ID)}>options</button></div>
-    <div id={fmt.Sprintf("options-%d", message.ID)} class="msg-options"></div>
-
-
-    if message.ReplyID != 0 {
-
-        if message.ReplyStatus == "deleted" {
-            <div><i style="color:red">Reply to deleted message</i></div>
+        if thereIsChatOP {
+            if message.UserID == message.ChatOp.String {
+                <h5 style="color:blue">{message.User.Username} - OP</h5>
+            } else {
+                <h5 style="color:rgb(176, 6, 6)">{message.User.Username}</h5>
+            }
         } else {
-            <div id={fmt.Sprintf("reply-%d", message.ReplyID)} class="replies"><a href={templ.SafeURL(fmt.Sprintf("#message-%d", message.ReplyID))}>reply to {message.Reply.Text}</a></div>
+            <h5 style="color:green">{message.User.Username}</h5>
         }
+
+
+        <div><button onclick="getOptions(this)" data-id={fmt.Sprint(message.ID)}>options</button></div>
+        <div id={fmt.Sprintf("options-%d", message.ID)} class="msg-options"></div>
+
+
+        if message.ReplyID != 0 {
+            if message.ReplyStatus == "deleted" {
+                <div><i style="color:red">Reply to deleted message</i></div>
+            } else {
+                <div id={fmt.Sprintf("reply-%d", message.ReplyID)} class="replies"><a href={templ.SafeURL(fmt.Sprintf("#message-%d", message.ReplyID))}>reply to {message.Reply.Text}</a></div>
+            }
+        }
+
+        <h3 id={fmt.Sprintf("message-%d", message.ID)}>{message.Text}</h3>
+        <i>at {message.Date.Format("02.01.2006 15:04")}</i>
+        <hr />
+
+        </div>
     }
-
-    <h3 id={fmt.Sprintf("message-%d", message.ID)}>{message.Text}</h3>
-    <i>at {message.Date.Format("02.01.2006 15:04")}</i>
-    <hr />
-
-    </div>
 }
 
 
 templ already_joined(chatDatas models.ChatDatas) {
 
-    if !chatDatas.User.Verified {
+    // if !chatDatas.User.Verified {
 
-        <h2>Your account is not verified yet, you may want to verify it <a href={templ.SafeURL("/email/verification/send")}>here</a></h2>
+        // <h2>Your account is not verified yet, you may want to verify it <a href={templ.SafeURL("/email/verification/send")}>here</a></h2>
 
-    } else {
+    // } else {
         
         <div id="already-joined">
 
@@ -279,21 +286,21 @@ templ already_joined(chatDatas models.ChatDatas) {
             <button onclick="sendMsg()" style="width:60px;height:35px">send</button>
 
         </div>
-    }
+    // }
 }
 
 
 templ not_joined(chatDatas models.ChatDatas) {
-    if chatDatas.User.Verified {
+    // if chatDatas.User.Verified {
         <div id="not-joined">
 
             <h3>join this chat!</h3>
             <button hx-post={string(templ.SafeURL(fmt.Sprintf("/join/chat/%d", chatDatas.ChatRoom.ID)))} hx-target="#not-joined">click to join</button>
 
         </div>
-    } else {
-        <h2>Your account is not verified yet, go <a href={templ.SafeURL("/email/verification/send")}>here</a> to verify it</h2>
-    }
+    // } else {
+        // <h2>Your account is not verified yet, go <a href={templ.SafeURL("/email/verification/send")}>here</a> to verify it</h2>
+    // }
 }
 
 

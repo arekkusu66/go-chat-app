@@ -17,6 +17,12 @@ type ChatDatas struct {
 }
 
 
+type MessageDatas struct {
+	IsReply				bool		`json:"isReply"`
+	IsBlocked			bool		`json:"isBlocked"`
+}
+
+
 type Client struct {
 	LastRequest			time.Time
 	Limiter				*rate.Limiter
