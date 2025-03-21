@@ -43,7 +43,6 @@ func MSGWS(w http.ResponseWriter, r *http.Request, clients map[*websocket.Conn]s
 	userData, err := utils.ParseCookie(r)
 
 	if err != nil {
-		fmt.Println(err)
 		return
 	}
 
@@ -61,7 +60,6 @@ func MSGWS(w http.ResponseWriter, r *http.Request, clients map[*websocket.Conn]s
 		}
 
 		if err := conn.ReadJSON(&message); err != nil {
-			fmt.Println(err)
 			return
 		}
 
@@ -82,13 +80,13 @@ func MSGWS(w http.ResponseWriter, r *http.Request, clients map[*websocket.Conn]s
 		models.DB.Create(&message)
 
 
-		go func() {
-			for client, wsid := range clients {
-				if wsid == id {
-					client.WriteJSON(&message)
+		for client, wsid := range clients {
+			if wsid == id {
+				if err := client.WriteJSON(&message); err != nil {
+					return
 				}
 			}
-		}()
+		}
 	}
 }
 
@@ -97,7 +95,6 @@ func DELWS(w http.ResponseWriter, r *http.Request, clients map[*websocket.Conn]s
 	conn, err := utils.Wupg.Upgrade(w, r, nil)
 
 	if err != nil {
-		fmt.Println(err)
 		return
 	}
 
@@ -120,7 +117,6 @@ func DELWS(w http.ResponseWriter, r *http.Request, clients map[*websocket.Conn]s
 		mtype, msg, err := conn.ReadMessage()
 
 		if err != nil {
-			fmt.Println(err)
 			return
 		}
 
@@ -130,11 +126,11 @@ func DELWS(w http.ResponseWriter, r *http.Request, clients map[*websocket.Conn]s
 		models.DB.Model(&models.Message{}).Where("reply_id = ?", id).Updates(models.Message{ReplyStatus: "deleted"})
 
 
-		go func() {
-			for client := range clients {
-				client.WriteMessage(mtype, msg)
+		for client := range clients {
+			if err := client.WriteMessage(mtype, msg); err != nil {
+				return
 			}
-		}()
+		}
 	}
 }
 
@@ -143,7 +139,6 @@ func NOTIFWS(w http.ResponseWriter, r *http.Request, clients map[*websocket.Conn
 	conn, err := utils.Wupg.Upgrade(w, r, nil)
 
 	if err != nil {
-		fmt.Println(err)
 		return
 	}
 
@@ -161,7 +156,6 @@ func NOTIFWS(w http.ResponseWriter, r *http.Request, clients map[*websocket.Conn
 	userData, err := utils.ParseCookie(r)
 
 	if err != nil {
-		fmt.Println(err)
 		return
 	}
 
@@ -181,12 +175,10 @@ func NOTIFWS(w http.ResponseWriter, r *http.Request, clients map[*websocket.Conn
 		}
 
 		if err := conn.ReadJSON(&notification); err != nil {
-			fmt.Println(err)
 			return
 		}
 
 		if err := models.DB.Preload(clause.Associations).First(&targetUser, "username = ?", notification.User.Username).Error; err != nil {
-			fmt.Println(err)
 			return
 		}
 
@@ -232,12 +224,12 @@ func NOTIFWS(w http.ResponseWriter, r *http.Request, clients map[*websocket.Conn
 		models.DB.Create(&notification)
 
 		
-		go func() {
-			for client, id := range clients {
-				if id == targetUser.ID {
-					client.WriteMessage(websocket.TextMessage, []byte(fmt.Sprint(targetUser.UnreadNotifsCount())))
+		for client, id := range clients {
+			if id == targetUser.ID {
+				if err := client.WriteMessage(websocket.TextMessage, fmt.Append(nil, targetUser.UnreadNotifsCount())); err != nil {
+					return
 				}
 			}
-		}()
+		}
 	}
 }

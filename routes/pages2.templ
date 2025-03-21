@@ -263,11 +263,11 @@ templ message_user(message models.Message, user models.User, thereIsChatOP bool)
 
 templ already_joined(chatDatas models.ChatDatas) {
 
-    // if !chatDatas.User.Verified {
+    if !chatDatas.User.Verified {
 
-        // <h2>Your account is not verified yet, you may want to verify it <a href={templ.SafeURL("/email/verification/send")}>here</a></h2>
+        <h2>Your account is not verified yet, you may want to verify it <a href={templ.SafeURL("/email/verification/send")}>here</a></h2>
 
-    // } else {
+    } else {
         
         <div id="already-joined">
 
@@ -286,21 +286,21 @@ templ already_joined(chatDatas models.ChatDatas) {
             <button onclick="sendMsg()" style="width:60px;height:35px">send</button>
 
         </div>
-    // }
+    }
 }
 
 
 templ not_joined(chatDatas models.ChatDatas) {
-    // if chatDatas.User.Verified {
+    if chatDatas.User.Verified {
         <div id="not-joined">
 
             <h3>join this chat!</h3>
             <button hx-post={string(templ.SafeURL(fmt.Sprintf("/join/chat/%d", chatDatas.ChatRoom.ID)))} hx-target="#not-joined">click to join</button>
 
         </div>
-    // } else {
-        // <h2>Your account is not verified yet, go <a href={templ.SafeURL("/email/verification/send")}>here</a> to verify it</h2>
-    // }
+    } else {
+        <h2>Your account is not verified yet, go <a href={templ.SafeURL("/email/verification/send")}>here</a> to verify it</h2>
+    }
 }
 
 
