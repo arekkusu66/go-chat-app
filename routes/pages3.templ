@@ -20,8 +20,8 @@ css unreads() {
 
 
 templ user_notifications(user models.User) {
-    <script src="/script/notifclient.js" defer />
-    <script src="/script/scripts.js" defer />
+    <script src="/script/notifclient.js" defer></script>
+    <script src="/script/scripts.js" defer></script>
 
     <div id="notifications" class={notifications(), templ.KV(unreads(), user.AreThereUnreadNotifs())}>
         <button onclick="showNotifications()">Show</button>

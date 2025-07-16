@@ -31,7 +31,7 @@ func oauth() models.Oauth {
 
 
 func OauthSignUpH(w http.ResponseWriter, r *http.Request) {
-	var url = oauth().Config.AuthCodeURL("idk", oauth2.AccessTypeOffline)
+	var url = oauth().Config.AuthCodeURL(utils.GenerateOauthState(), oauth2.AccessTypeOffline)
 	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 }
 
@@ -39,9 +39,12 @@ func OauthSignUpH(w http.ResponseWriter, r *http.Request) {
 func OauthCredsH(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html")
 
-	var code = r.URL.Query().Get("code")
+	var (
+		code 	  = 	r.URL.Query().Get("code")
+		oauthC 	  = 	oauth()
+	)
 
-	token, err := oauth().Config.Exchange(context.Background(), code)
+	token, err := oauthC.Config.Exchange(context.Background(), code)
 
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -53,7 +56,7 @@ func OauthCredsH(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var client = oauth().Config.Client(context.Background(), token)
+	var client = oauthC.Config.Client(context.Background(), token)
 
 	resp, err := client.Get("https://www.googleapis.com/oauth2/v2/userinfo")
 

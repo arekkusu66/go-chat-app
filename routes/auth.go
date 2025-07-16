@@ -56,7 +56,7 @@ func SignUpH(w http.ResponseWriter, r *http.Request) {
 		bytePassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 
 		if err != nil {
-			http.Error(w, "couldnt save password", http.StatusInternalServerError)
+			http.Error(w, "couldnt save the password", http.StatusInternalServerError)
 			return
 		}
 

@@ -2,6 +2,7 @@ package utils
 
 import (
 	crrand "crypto/rand"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"gochat/models"
@@ -34,7 +35,7 @@ func ParseCookie(r *http.Request) (*models.Claims, error) {
 		return nil, err
 	}
 
-	token, err := jwt.ParseWithClaims(cookie.Value, &models.Claims{}, func(t *jwt.Token) (interface{}, error) {
+	token, err := jwt.ParseWithClaims(cookie.Value, &models.Claims{}, func(t *jwt.Token) (any, error) {
 		return []byte(os.Getenv("JWT_SECRET")), nil
 	})
 
@@ -69,13 +70,22 @@ func GenerateToken() string {
 
 	var ret = make([]byte, 8)
 
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		num, _ := crrand.Int(crrand.Reader, big.NewInt(int64(len(chars))))
 
 		ret[i] = chars[num.Int64()]
 	}
 
 	return string(ret)
+}
+
+
+func GenerateOauthState() string {
+	var b = make([]byte, 16)
+
+	crrand.Read(b)
+
+	return base64.StdEncoding.EncodeToString(b)
 }
 
 

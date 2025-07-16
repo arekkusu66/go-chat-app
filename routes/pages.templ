@@ -12,7 +12,7 @@ templ home(user models.User) {
 
     <title>chatrooms</title>
 
-    <script src="/script/scripts.js" defer />
+    <script src="/script/scripts.js" defer></script>
 
     if user.ID == "" {
         
@@ -22,7 +22,7 @@ templ home(user models.User) {
     } else {
 
         if !user.Verified {
-            <h2>Your account is not verified yet, you may want to verify it <a href={templ.SafeURL("/email/verification/send")}>here</a></h2>
+            <h2>Your account is not verified yet, you may want to verify it <a href={templ.URL("/email/verification/send")}>here</a></h2>
         }
 
 
@@ -47,9 +47,9 @@ templ chat(chatDatas models.ChatDatas) {
 
     <title>{chatDatas.ChatRoom.Title}</title>
     
-    <script src="/script/msgclient.js" defer />
-    <script  src="/script/htmx.js" defer />
-    <script src="/script/scripts.js" defer />
+    <script src="/script/msgclient.js" defer></script>
+    <script src="/script/htmx.js" defer></script>
+    <script src="/script/scripts.js" defer></script>
 
 
     @user_notifications(chatDatas.User)
@@ -59,7 +59,7 @@ templ chat(chatDatas models.ChatDatas) {
         <p>joined users:</p>
         <p style="color:green">
             for _, user := range chatDatas.ChatRoom.JoinedUsers {
-                {user.Username + ",  "}
+                <i>{user.Username + ",  "}</i>
             }
         </p>
     </div>
@@ -81,13 +81,13 @@ templ chat(chatDatas models.ChatDatas) {
 templ dmchat(dm models.DM, user models.User) {
     <!DOCTYPE html>
 
-    <script src="/script/dmclient.js" defer />
-    <script src="/script/htmx.js" defer />
-    <script src="/script/scripts.js" defer />
+    <script src="/script/dmclient.js" defer></script>
+    <script src="/script/htmx.js" defer></script>
+    <script src="/script/scripts.js" defer></script>
 
 
     if !user.Verified {
-        <h2>Your account is not verified yet, you may want to verify it <a href={templ.SafeURL("/email/verification/send")}>here</a></h2>
+        <h2>Your account is not verified yet, you may want to verify it <a href={templ.URL("/email/verification/send")}>here</a></h2>
     }
 
 
@@ -117,7 +117,7 @@ templ dmchatrooms(user models.User) {
 
 
     if !user.Verified {
-        <h2>Your account is not verified yet, you may want to verify it <a href={templ.SafeURL("/email/verification/send")}>here</a></h2>
+        <h2>Your account is not verified yet, you may want to verify it <a href={templ.URL("/email/verification/send")}>here</a></h2>
     }
 
 
@@ -132,7 +132,7 @@ templ dmchatrooms(user models.User) {
                 <div>
 
                     if !user.CheckUserRelations(user, dm.IgnoredBy) {
-                        <a href={templ.SafeURL(fmt.Sprintf("/dm/%d", dm.ID))}>{user.GetTheOtherUser(dm).Username}</a>
+                        <a href={templ.URL(fmt.Sprintf("/dm/%d", dm.ID))}>{user.GetTheOtherUser(dm).Username}</a>
                     
                         if dm.LastMessage().ID != 0 {
                             if dm.LastMessage().User.ID == user.ID {
@@ -160,7 +160,7 @@ templ dmchatrooms(user models.User) {
             for _, dmReq := range user.DMRequests {
 
                 <div>
-                    <a href={templ.SafeURL(fmt.Sprintf("/dm/%d", dmReq.ID))}>{user.GetTheOtherUser(dmReq).Username}</a>
+                    <a href={templ.URL(fmt.Sprintf("/dm/%d", dmReq.ID))}>{user.GetTheOtherUser(dmReq).Username}</a>
                 </div>
             }
         }
@@ -176,7 +176,7 @@ templ dmchatrooms(user models.User) {
             for _, dmIgnored := range user.IgnoredDMS {
 
                 <div>
-                    <a href={templ.SafeURL(fmt.Sprintf("/dm/%d", dmIgnored.ID))}>{user.GetTheOtherUser(dmIgnored).Username}</a>
+                    <a href={templ.URL(fmt.Sprintf("/dm/%d", dmIgnored.ID))}>{user.GetTheOtherUser(dmIgnored).Username}</a>
                 </div>
 
             }
@@ -189,8 +189,8 @@ templ dmchatrooms(user models.User) {
 templ userpage(user, currentUser models.User) {
     <!DOCTYPE html>
 
-    <script src="/script/htmx.js" defer />
-    <script src="/script/scripts.js" defer />
+    <script src="/script/htmx.js" defer></script>
+    <script src="/script/scripts.js" defer></script>
 
 
     if user.ID == currentUser.ID {
@@ -204,7 +204,7 @@ templ userpage(user, currentUser models.User) {
 templ log(logged bool, logtype string) {
     <!DOCTYPE html>
     
-    <script src="/script/htmx.js" defer />
+    <script src="/script/htmx.js" defer></script>
 
     if logged {
         <h1>you are already logged in! you can go to <a href="/">chats</a></h1>
@@ -242,7 +242,7 @@ templ log(logged bool, logtype string) {
 templ email_verification_send(user models.User) {
     <!DOCTYPE html>
 
-    <script src="/script/htmx.js" defer />
+    <script src="/script/htmx.js" defer></script>
 
     if user.Verified {
         <h2>You are already verified!</h2>
@@ -261,7 +261,7 @@ templ email_verification_send(user models.User) {
 templ password_reset_send() {
     <!DOCTYPE html>
 
-    <script src="/script/htmx.js" defer />
+    <script src="/script/htmx.js" defer></script>
 
     <button hx-post="/password/reset" hx-swap="innerHTML" hx-target="#status">Send password reset link to your email</button>
 
@@ -274,7 +274,7 @@ templ password_forgot(user models.User) {
 
     if user.PasswordVerification != nil {
 
-        <form method="POST" action={templ.SafeURL(fmt.Sprintf("/password/new?token=%s", user.PasswordVerification.Token))} accept-charset="utf-8">
+        <form method="POST" action={templ.URL(fmt.Sprintf("/password/new?token=%s", user.PasswordVerification.Token))} accept-charset="utf-8">
             <input type="password" name="password" />
             <input type="password" id="confirm_password" />
             <button type="submit" value="submit">change password</button>
@@ -287,7 +287,7 @@ templ password_forgot(user models.User) {
 
 
 templ oauth_creds() {
-    <script src="/script/scripts.js" defer />
+    <script src="/script/scripts.js" defer></script>
 
     <input type="text" id="new-username" placeholder="your username" />
     <button onclick="changeUsername()">Submit</button>

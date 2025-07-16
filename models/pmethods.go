@@ -36,14 +36,14 @@ func (u *User) Add(targetUser *User, w http.ResponseWriter) {
 			DB.Save(u) 
 			DB.Save(targetUser)
 		
-			w.Write([]byte(fmt.Sprintf("<div id=\"friend-req-sent\"><h3>Friend request sent to %s</h3><button hx-post=\"/user/actionss?type=cancel&username=%s\" hx-trigger=\"click\" hx-target=\"#friend-req-sent\" hx-swap=\"outerHTML\">cancel</button></div>", targetUser.Username, targetUser.Username)))
+			w.Write(fmt.Appendf(nil, "<div id=\"friend-req-sent\"><h3>Friend request sent to %s</h3><button hx-post=\"/user/actionss?type=cancel&username=%s\" hx-trigger=\"click\" hx-target=\"#friend-req-sent\" hx-swap=\"outerHTML\">cancel</button></div>", targetUser.Username, targetUser.Username))
 	}
 }
 
 
 func (u *User) Cancel(targetUser *User, w http.ResponseWriter) {
 	if u.CheckUserRelations(*targetUser, u.Friends) {
-		w.Write([]byte(fmt.Sprintf("<div id=\"friends\"><h3>You are friend with %s</h3></div>", targetUser.Username)))
+		w.Write(fmt.Appendf(nil, "<div id=\"friends\"><h3>You are friend with %s</h3></div>", targetUser.Username))
 		return
 	}
 
@@ -56,7 +56,7 @@ func (u *User) Cancel(targetUser *User, w http.ResponseWriter) {
 	
 		var blockAction = fmt.Sprintf("<button hx-post=\"/user/actions?type=block&username=%s\" hx-trigger=\"click\" hx-target=\"#user-actions\" hx-swap=\"outerHTML\">block user</button>", targetUser.Username)
 	
-		w.Write([]byte(fmt.Sprintf("<div id=\"user-actions\">%s%s</div", addAction, blockAction)))
+		w.Write(fmt.Appendf(nil, "<div id=\"user-actions\">%s%s</div", addAction, blockAction))
 	}
 }
 
@@ -74,7 +74,7 @@ func (u *User) Accept(targetUser *User, w http.ResponseWriter) {
 
 		DB.Where("user_id = ? AND notif_from = ? AND type = ?", u.ID, targetUser.ID, types.FRIEND_REQ).Delete(&Notification{})
 
-		w.Write([]byte(fmt.Sprintf("<div id=\"friends\"><h3>You are friend with %s</h3></div>", targetUser.Username)))
+		w.Write(fmt.Appendf(nil, "<div id=\"friends\"><h3>You are friend with %s</h3></div>", targetUser.Username))
 	}
 }
 
@@ -83,7 +83,7 @@ func (u *User) Ignore(targetUser *User, w http.ResponseWriter) {
 	if u.CheckUserRelations(*u, targetUser.SentFriendReqs) {
 		DB.Model(u).Association("ReceivedFriendReqs").Delete(targetUser)
 		DB.Where("user_id = ? AND notif_from = ? AND type = ?", u.ID, targetUser.ID, types.FRIEND_REQ).Delete(&Notification{})
-		w.Write([]byte(fmt.Sprintf("You ignored %s's friend request", targetUser.Username)))
+		w.Write(fmt.Appendf(nil, "You ignored %s's friend request", targetUser.Username))
 	}
 }
 
@@ -107,7 +107,7 @@ func (u *User) Block(targetUser *User, w http.ResponseWriter) {
 	DB.Save(u)
 	DB.Save(targetUser)
 
-	w.Write([]byte(fmt.Sprintf("<div id=\"blocked-user\"><h3>You blocked %s</h3><button hx-post=\"/user/actions?type=unblock&username=%s\" hx-trigger=\"click\" hx-target=\"#blocked-user\" hx-swap=\"outerHTML\">unblock</button></div>", targetUser.Username, targetUser.Username)))
+	w.Write(fmt.Appendf(nil, "<div id=\"blocked-user\"><h3>You blocked %s</h3><button hx-post=\"/user/actions?type=unblock&username=%s\" hx-trigger=\"click\" hx-target=\"#blocked-user\" hx-swap=\"outerHTML\">unblock</button></div>", targetUser.Username, targetUser.Username))
 }
 
 
@@ -128,7 +128,7 @@ func (u *User) Unblock(targetUser *User, w http.ResponseWriter) {
 	
 		var blockAction = fmt.Sprintf("<button hx-post=\"/user/actions?action=block&username=%s\" hx-trigger=\"click\" hx-target=\"#user-actions\" hx-swap=\"outerHTML\">block user</button>", targetUser.Username)
 	
-		w.Write([]byte(fmt.Sprintf("<div id=\"user-actions\">%s%s</div", addAction, blockAction)))
+		w.Write(fmt.Appendf(nil, "<div id=\"user-actions\">%s%s</div", addAction, blockAction))
 	}
 }
 
