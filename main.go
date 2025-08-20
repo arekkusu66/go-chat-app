@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/arekkusu66/goutils/serve"
-	"github.com/gorilla/websocket"
 	"github.com/joho/godotenv"
 )
 
@@ -28,7 +27,12 @@ func init() {
 
 
 func main() {
-	var mux = http.NewServeMux()
+	var (
+		mux = http.NewServeMux()
+		ws = routes.NewServer()
+	)
+
+	go ws.Run()
 
 	serve.Dir("/script", mux)
 
@@ -63,11 +67,11 @@ func main() {
 	mux.HandleFunc("/password/reset", mw.RateLimiter(routes.PasswordResetH, time.Minute))
 	mux.HandleFunc("/password/new", mw.RateLimiter(routes.PasswordNewH, time.Minute))
 
-	mux.HandleFunc("/msg/ws/{id}", mw.Ws(models.WSconf{Type: "chat", Clients: make(map[*websocket.Conn]string)}))
-	mux.HandleFunc("/dm/ws/{id}", mw.Ws(models.WSconf{Type: "dm", Clients: make(map[*websocket.Conn]string)}))
-	mux.HandleFunc("/msg/ws/del/{id}", mw.Ws(models.WSconf{Type: "del", Clients: make(map[*websocket.Conn]string)}))
-	mux.HandleFunc("/dm/ws/del/{id}", mw.Ws(models.WSconf{Type: "del", Clients: make(map[*websocket.Conn]string)}))
-	mux.HandleFunc("/notif/ws", mw.Ws(models.WSconf{Type: "notif", Clients: make(map[*websocket.Conn]string)}))
+	mux.HandleFunc("/msg/ws/{id}", ws.MSGWS(true))
+	mux.HandleFunc("/dm/ws/{id}", ws.MSGWS(false))
+	mux.HandleFunc("/msg/ws/del/{id}", ws.DELWS)
+	mux.HandleFunc("/dm/ws/del/{id}", ws.DELWS)
+	mux.HandleFunc("/notif/ws", ws.NOTIFWS)
 
 
 	log.Fatal(http.ListenAndServe(":5173", mux))

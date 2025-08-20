@@ -12,4 +12,8 @@ const (
 	ACC_CREATED			=		"acc-created"
 	ACC_VERIFY_NEED		=		"acc-verify-need"
 	ACC_VERIFIED		=		"acc-verified"
+
+	MSG 				=		"MSG"
+	DEL					=		"DEL"
+	NOTIF				=		"NOTIF"
 )

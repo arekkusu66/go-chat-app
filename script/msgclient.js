@@ -2,23 +2,23 @@ const msg_url = new URL(window.location.href);
 const id = msg_url.pathname.match(/\/chat\/(\d+)/)[1];
 
 const wsurl = `ws://${window.location.host}/msg/ws/` + id;
-const msg_ws = new WebSocket(wsurl);
+const msgws = new WebSocket(wsurl);
 
 const delUrl = `ws://${window.location.host}/msg/ws/del/` + id;
 const delws = new WebSocket(delUrl);
 
 
-msg_ws.onopen = () => {
+msgws.onopen = () => {
     console.log('connected');
 };
 
 
-msg_ws.onerror = (error) => {
+msgws.onerror = (error) => {
     alert(error);
 };
 
 
-msg_ws.onmessage = (e) => {
+msgws.onmessage = (e) => {
     let message = JSON.parse(e.data);
 
     addMessage(message);
@@ -38,7 +38,7 @@ function sendMsg() {
         replyStatus: 'not_deleted',
     };
 
-    msg_ws.send(JSON.stringify(datas));
+    msgws.send(JSON.stringify(datas));
 
     message.value = '';
     replyId.textContent = '';
@@ -105,9 +105,16 @@ delws.onerror = (error) => {
 
 
 delws.onmessage = (e) => {
-    let id = e.data;
+    let data = JSON.parse(e.data);
 
-    document.querySelector(`#message-c-${id}`).remove();
+    document.querySelector(`#message-c-${data.id}`).remove();
 
-    Array.from(document.querySelectorAll(`#reply-${id}`)).map((e) => e.innerHTML = `<div><i style="color:red">Reply to deleted message</i></div>`);
+    Array.from(document.querySelectorAll(`#reply-${data.id}`))
+    .forEach(e => e.innerHTML = `<div><i style="color:red">Reply to deleted message</i></div>`);
+};
+
+
+function deleteMsg(button) {
+    const id = button.dataset.id;
+    delws.send(id);
 };

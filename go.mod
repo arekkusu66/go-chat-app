@@ -3,7 +3,7 @@ module gochat
 go 1.23.0
 
 require (
-	github.com/a-h/templ v0.3.906
+	github.com/a-h/templ v0.3.943
 	github.com/arekkusu66/goutils v0.0.0-20241120225952-619de69884c4
 	github.com/golang-jwt/jwt/v5 v5.2.3
 	github.com/google/uuid v1.6.0

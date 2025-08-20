@@ -6,6 +6,7 @@ import (
 	"gochat/models"
 	"gochat/types"
 	"gochat/utils"
+	"log"
 	"net/http"
 	"sync"
 	"time"
@@ -15,109 +16,218 @@ import (
 )
 
 
-func MSGWS(w http.ResponseWriter, r *http.Request, clients map[*websocket.Conn]string, isItChatRoom bool) {
-	conn, err := utils.Wupg.Upgrade(w, r, nil)
-
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
-	var mu sync.Mutex
-
-	defer func() {
-		mu.Lock()
-		delete(clients, conn)
-		mu.Unlock()
-
-		conn.Close()
-	}()
-
-	var id = r.PathValue("id")
-
-	mu.Lock()
-	clients[conn] = id
-	mu.Unlock()
-
-
-	userData, err := utils.ParseCookie(r)
-
-	if err != nil {
-		return
-	}
-
-	var user models.User
-	models.DB.First(&user, "id = ?", userData.ID)
-
-	var reply models.Message
-
+type WebsocketServer struct {
+	upgrader			websocket.Upgrader
 	
+	mu					sync.RWMutex
+
+	connect				chan *connect
+	disconnect			chan *disconnect
+	broadcast			chan *broadcast
+
+	clientsMsg			map[*websocket.Conn]string
+	clientsNotif		map[*websocket.Conn]string
+}
+
+
+type connect struct {
+	conn				*websocket.Conn
+	type_				string
+	id					string
+}
+
+
+type disconnect struct {
+	conn				*websocket.Conn
+	type_				string
+}
+
+
+type broadcast struct {
+	data 				any
+	type_				string
+	id					string
+}
+
+
+func NewServer() *WebsocketServer {
+	return &WebsocketServer{
+		upgrader: websocket.Upgrader{
+			CheckOrigin: func(r *http.Request) bool {
+				return true
+			},
+			ReadBufferSize:  1024,
+			WriteBufferSize: 1024,
+		},
+
+		connect: make(chan *connect),
+		disconnect: make(chan *disconnect),
+		broadcast: make(chan *broadcast),
+
+		clientsMsg: make(map[*websocket.Conn]string),
+		clientsNotif: make(map[*websocket.Conn]string),
+
+		mu: sync.RWMutex{},
+	}
+}
+
+
+func (ws *WebsocketServer) Run() {
 	for {
-		var message = models.Message{
-			Date: time.Now(),
-			User: user,
-			UserID: user.ID,
-		}
-
-		if err := conn.ReadJSON(&message); err != nil {
-			return
-		}
-
-
-		if message.ReplyID != 0 {
-			if models.DB.First(&reply, message.ReplyID).Error == nil {
-				message.Reply = &reply
-			}
-		}
-
-
-		if isItChatRoom {
-			var chatroom models.ChatRoom
-			models.DB.First(&chatroom, message.ChatRoomID)
-			message.ChatOp = sql.NullString{String: chatroom.CreatedBy, Valid: true}
-		}
-
-		models.DB.Create(&message)
-
-
-		for client, wsid := range clients {
-			if wsid == id {
-				if err := client.WriteJSON(&message); err != nil {
-					return
+		select {
+			case conn := <-ws.connect:
+				ws.mu.Lock()
+				switch conn.type_ {
+					case types.MSG:
+						ws.clientsMsg[conn.conn] = conn.id
+					case types.NOTIF:
+						ws.clientsNotif[conn.conn] = conn.id
 				}
-			}
+				ws.mu.Unlock()
+
+			case diss := <-ws.disconnect:
+				ws.mu.Lock()
+				switch diss.type_ {
+					case types.MSG:
+						delete(ws.clientsMsg, diss.conn)
+						diss.conn.Close()
+					case types.NOTIF:
+						delete(ws.clientsNotif, diss.conn)
+						diss.conn.Close()
+				}
+				ws.mu.Unlock()
+
+			case broadcast := <-ws.broadcast:
+				ws.mu.RLock()
+
+				switch broadcast.type_ {
+					case types.MSG:
+						for client, roomID := range ws.clientsMsg {
+							if roomID == broadcast.id {
+								if err := client.WriteJSON(broadcast.data); err != nil {
+									log.Println(err)
+								}
+							}
+						}
+
+					case types.NOTIF:
+						for client, userID := range ws.clientsNotif {
+							if userID == broadcast.id {
+								if err := client.WriteJSON(broadcast.data); err != nil {
+									log.Println(err)
+								}
+						}
+					}
+				}
+
+				ws.mu.RUnlock()
 		}
 	}
 }
 
 
-func DELWS(w http.ResponseWriter, r *http.Request, clients map[*websocket.Conn]string) {
-	conn, err := utils.Wupg.Upgrade(w, r, nil)
+func (ws *WebsocketServer) MSGWS(isItChatRoom bool) http.HandlerFunc {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := ws.upgrader.Upgrade(w, r, nil)
 
-	if err != nil {
-		return
-	}
+		if err != nil {
+			log.Fatal(err)
+		}
 
-	var mu sync.Mutex
+		defer func() {
+			ws.disconnect <- &disconnect{
+				conn: conn,
+				type_: types.MSG,
+			}
+		}()
 
-	defer func() {
-		mu.Lock()
-		delete(clients, conn)
-		mu.Unlock()
+		var roomID = r.PathValue("id")
 
-		conn.Close()
-	}()
-
-	mu.Lock()
-	clients[conn] = ""
-	mu.Unlock()
+		ws.connect <- &connect{
+			conn: conn,
+			id: roomID,
+			type_: types.MSG,
+		}
 
 
-	for {
-		mtype, msg, err := conn.ReadMessage()
+		userData, err := utils.ParseCookie(r)
 
 		if err != nil {
 			return
+		}
+
+		var user models.User
+		models.DB.First(&user, "id = ?", userData.ID)
+
+		var reply models.Message
+
+	
+		for {
+			var message = &models.Message{
+				Date: time.Now(),
+				User: user,
+				UserID: user.ID,
+			}
+
+			if err := conn.ReadJSON(&message); err != nil {
+				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {}
+				break 
+			}
+
+
+			if message.ReplyID != 0 {
+				if models.DB.First(&reply, message.ReplyID).Error == nil {
+					message.Reply = &reply
+				}
+			}
+
+
+			if isItChatRoom {
+				var chatroom models.ChatRoom
+				models.DB.First(&chatroom, message.ChatRoomID)
+				message.ChatOp = sql.NullString{String: chatroom.CreatedBy, Valid: true}
+			}
+
+			models.DB.Create(&message)
+
+			ws.broadcast <- &broadcast{
+				data: message,
+				id: roomID,
+				type_: types.MSG,
+			}
+		}
+	})
+}
+
+
+func (ws *WebsocketServer) DELWS(w http.ResponseWriter, r *http.Request) {
+	conn, err := ws.upgrader.Upgrade(w, r, nil)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer func() {
+		ws.disconnect <- &disconnect{
+			conn: conn,
+			type_: types.MSG,
+		}
+	}()
+
+	var roomID = r.PathValue("id")
+
+	ws.connect <- &connect{
+		conn: conn,
+		id: roomID,
+		type_: types.MSG,
+	}
+
+	for {
+		_, msg, err := conn.ReadMessage()
+
+		if err != nil {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {}
+			break 
 		}
 
 		var id = string(msg)
@@ -125,33 +235,28 @@ func DELWS(w http.ResponseWriter, r *http.Request, clients map[*websocket.Conn]s
 		models.DB.Delete(&models.Message{}, id)
 		models.DB.Model(&models.Message{}).Where("reply_id = ?", id).Updates(models.Message{ReplyStatus: "deleted"})
 
-
-		for client := range clients {
-			if err := client.WriteMessage(mtype, msg); err != nil {
-				return
-			}
+		ws.broadcast <- &broadcast{
+			data: map[string]string{"id": id},
+			id: roomID,
+			type_: types.MSG,
 		}
 	}
 }
 
 
-func NOTIFWS(w http.ResponseWriter, r *http.Request, clients map[*websocket.Conn]string) {
-	conn, err := utils.Wupg.Upgrade(w, r, nil)
+func (ws *WebsocketServer) NOTIFWS(w http.ResponseWriter, r *http.Request) {
+	conn, err := ws.upgrader.Upgrade(w, r, nil)
 
 	if err != nil {
 		return
 	}
 
-	var mu sync.Mutex
-
-	defer func() {
-		mu.Lock()
-		delete(clients, conn)
-		mu.Unlock()
-		
-		conn.Close()
+	defer func ()  {
+		ws.disconnect <- &disconnect{
+			conn: conn,
+			type_: types.NOTIF,
+		}
 	}()
-
 
 	userData, err := utils.ParseCookie(r)
 
@@ -162,20 +267,25 @@ func NOTIFWS(w http.ResponseWriter, r *http.Request, clients map[*websocket.Conn
 	var user models.User
 	models.DB.Preload(clause.Associations).First(&user, "id = ?", userData.ID)
 
-	mu.Lock()
-	clients[conn] = user.ID
-	mu.Unlock()
+
+	ws.connect <- &connect{
+		conn: conn,
+		id: user.ID,
+		type_: types.NOTIF,
+	}
 	
+
 	var targetUser models.User
 
 
 	for {
-		var notification = models.Notification{
+		var notification = &models.Notification{
 			Date: time.Now(),
 		}
 
-		if err := conn.ReadJSON(&notification); err != nil {
-			return
+		if err := conn.ReadJSON(notification); err != nil {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {}
+			break 
 		}
 
 		if err := models.DB.Preload(clause.Associations).First(&targetUser, "username = ?", notification.User.Username).Error; err != nil {
@@ -221,15 +331,12 @@ func NOTIFWS(w http.ResponseWriter, r *http.Request, clients map[*websocket.Conn
 				return
 		}
 
-		models.DB.Create(&notification)
-
+		models.DB.Create(notification)
 		
-		for client, id := range clients {
-			if id == targetUser.ID {
-				if err := client.WriteMessage(websocket.TextMessage, fmt.Append(nil, targetUser.UnreadNotifsCount())); err != nil {
-					return
-				}
-			}
+		ws.broadcast <- &broadcast{
+			data: map[string]int64{"count": targetUser.UnreadNotifsCount()},
+			id: targetUser.ID,
+			type_: types.NOTIF,
 		}
 	}
 }

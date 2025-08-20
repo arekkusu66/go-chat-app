@@ -111,18 +111,18 @@ func SignUpH(w http.ResponseWriter, r *http.Request) {
 	userData, err := utils.ParseCookie(r)
 
 	if err != nil || userData.ID == "" {
-		log(false, "signup").Render(r.Context(), w)
+		login(false, "signup").Render(r.Context(), w)
 		return
 	}
 
 	var user models.User
 
 	if err := models.DB.First(&user, "id = ?", userData.ID).Error; err != nil {
-		log(false, "signup").Render(r.Context(), w)
+		login(false, "signup").Render(r.Context(), w)
 		return
 	}
 
-	log(true, "").Render(r.Context(), w)
+	login(true, "").Render(r.Context(), w)
 }
 
 
@@ -180,17 +180,17 @@ func LoginH(w http.ResponseWriter, r *http.Request) {
 	userData, err := utils.ParseCookie(r)
 
 	if err != nil || userData.ID == "" {
-		log(false, "login").Render(r.Context(), w)
+		login(false, "login").Render(r.Context(), w)
 		return
 	}
 
 	var user models.User
 	if err := models.DB.First(&user, "id = ?", userData.ID).Error; err != nil {
-		log(false, "login").Render(r.Context(), w)
+		login(false, "login").Render(r.Context(), w)
 		return
 	}
 
-	log(true, "").Render(r.Context(), w)
+	login(true, "").Render(r.Context(), w)
 }
 
 

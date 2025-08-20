@@ -2,7 +2,6 @@ package mw
 
 import (
 	"gochat/models"
-	"gochat/routes"
 	"gochat/utils"
 	"net/http"
 	"sync"
@@ -20,16 +19,24 @@ func RateLimiter(handle http.HandlerFunc, duration time.Duration) http.HandlerFu
 
 
 	go func() {
-		for {
-			for email, c := range clients {
-				mu.Lock()
-				
-				if time.Since(c.LastRequest) > duration {
-					delete(clients, email)
+		var ticker = time.NewTicker(time.Minute)
+		defer ticker.Stop()
+
+		for range ticker.C {
+			mu.Lock()
+			var idsToDelete = []string{}
+
+			for id, client := range clients {
+				if time.Since(client.LastRequest) > duration {
+					idsToDelete = append(idsToDelete, id)
 				}
-	
-				mu.Unlock()
 			}
+
+			for _, id := range idsToDelete {
+				delete(clients, id)
+			}
+
+			mu.Unlock()
 		}
 	}()
 
@@ -45,46 +52,31 @@ func RateLimiter(handle http.HandlerFunc, duration time.Duration) http.HandlerFu
 				http.Error(w, "couldnt retrieve user data", http.StatusInternalServerError)
 				return
 			}
+
+			models.DB.First(&user, "id = ?", userData.ID)
 	
 			mu.Lock()
-	
-			models.DB.First(&user, "id = ?", userData.ID)
 	
 			if _, found := clients[user.ID]; !found {
 				clients[user.ID] = &models.Client{Limiter: rate.NewLimiter(rate.Every(duration), 1)}
 			}
 	
 			clients[user.ID].LastRequest = time.Now()
+
+			var allowed = clients[user.ID].Limiter.Allow()
 	
-			if !clients[user.ID].Limiter.Allow() {
-				mu.Unlock()
+			mu.Unlock()
+
+			if !allowed {
 				http.Error(w, "too many requests", http.StatusTooManyRequests)
 				return
 			}
-	
-			mu.Unlock()
 			
 			handle.ServeHTTP(w, r)
 
 		} else {
 
 			handle.ServeHTTP(w, r)
-		}
-	})
-}
-
-
-func Ws(wsconf models.WSconf) http.HandlerFunc {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch wsconf.Type {
-			case "chat":
-				routes.MSGWS(w, r, wsconf.Clients, true)
-			case "dm":
-				routes.MSGWS(w, r, wsconf.Clients, false)
-			case "del":
-				routes.DELWS(w, r, wsconf.Clients)
-			case "notif":
-				routes.NOTIFWS(w, r, wsconf.Clients)
 		}
 	})
 }

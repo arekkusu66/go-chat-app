@@ -201,7 +201,7 @@ templ userpage(user, currentUser models.User) {
 }
 
 
-templ log(logged bool, logtype string) {
+templ login(logged bool, logtype string) {
     <!DOCTYPE html>
     
     <script src="/script/htmx.js" defer></script>
@@ -211,29 +211,29 @@ templ log(logged bool, logtype string) {
         <button hx-post="/logoff">log off</button>
 
     } else {
-        if logtype == "signup" {
 
-            <div id="signup">
-                <form method="POST" action="/signup" accept-charset="utf-8">
-                    <input type="text" name="username" />
-                    <input type="password" name="password" />
-                    <input type="password" id="confirm_password" />
-                    <input type="text" name="email" />
-                    <button type="submit" value="submit">create account</button>
-                </form>
-            </div>
+        switch logtype {
+            case "signup":
+                <div id="signup">
+                    <form method="POST" action="/signup" accept-charset="utf-8">
+                        <input type="text" name="username" />
+                        <input type="password" name="password" />
+                        <input type="password" id="confirm_password" />
+                        <input type="text" name="email" />
+                        <button type="submit" value="submit">create account</button>
+                    </form>
+                </div>
 
-            <h3>Or signup up with <a href="/oauth/signup">Google</a></h3>
+                <h3>Or signup up with <a href="/oauth/signup">Google</a></h3>
 
-        } else if logtype == "login" {
-
-            <div id="login">
-                <form method="POST" action="/login" accept-charset="utf-8">
-                    <input type="text" name="username" />
-                    <input type="password" name="password" />
-                    <button type="submit" value="submit">log in</button>
-                </form>
-            </div>
+            case "login":
+                <div id="login">
+                    <form method="POST" action="/login" accept-charset="utf-8">
+                        <input type="text" name="username" />
+                        <input type="password" name="password" />
+                        <button type="submit" value="submit">log in</button>
+                    </form>
+                </div>
         }
     }
 }

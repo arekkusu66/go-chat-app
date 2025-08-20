@@ -122,12 +122,6 @@ function reply(button) {
 };
 
 
-function deleteMsg(button) {
-    const id = button.dataset.id;
-    delws.send(id);
-};
-
-
 function formatDate(inputString) {
     const dateTimeParts = inputString.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2}\.\d+)/);
     
