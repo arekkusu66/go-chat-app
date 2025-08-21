@@ -7,6 +7,7 @@ import (
 	"gochat/types"
 	"gochat/utils"
 	"log"
+	"maps"
 	"net/http"
 	"sync"
 	"time"
@@ -47,6 +48,24 @@ type broadcast struct {
 	data 				any
 	type_				string
 	id					string
+}
+
+
+func (ws *WebsocketServer) broadcastToClients(clientsMap *map[*websocket.Conn]string, broadcast *broadcast) {
+	var mapCopy = make(map[*websocket.Conn]string)
+
+	ws.mu.RLock()
+	maps.Copy(mapCopy, *clientsMap)
+	ws.mu.RUnlock()
+
+	for client, mapID := range mapCopy {
+		if mapID == broadcast.id {
+			if err := client.WriteJSON(broadcast.data); err != nil {
+				log.Println(err)
+					continue
+			}
+		}
+	}
 }
 
 
@@ -98,29 +117,13 @@ func (ws *WebsocketServer) Run() {
 				ws.mu.Unlock()
 
 			case broadcast := <-ws.broadcast:
-				ws.mu.RLock()
-
 				switch broadcast.type_ {
 					case types.MSG:
-						for client, roomID := range ws.clientsMsg {
-							if roomID == broadcast.id {
-								if err := client.WriteJSON(broadcast.data); err != nil {
-									log.Println(err)
-								}
-							}
-						}
+						ws.broadcastToClients(&ws.clientsMsg, broadcast)
 
 					case types.NOTIF:
-						for client, userID := range ws.clientsNotif {
-							if userID == broadcast.id {
-								if err := client.WriteJSON(broadcast.data); err != nil {
-									log.Println(err)
-								}
-						}
-					}
+						ws.broadcastToClients(&ws.clientsNotif, broadcast)
 				}
-
-				ws.mu.RUnlock()
 		}
 	}
 }
