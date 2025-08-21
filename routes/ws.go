@@ -26,8 +26,13 @@ type WebsocketServer struct {
 	disconnect			chan *disconnect
 	broadcast			chan *broadcast
 
-	clientsMsg			map[*websocket.Conn]string
-	clientsNotif		map[*websocket.Conn]string
+	clients			map[*websocket.Conn]*client
+}
+
+
+type client struct {
+	id					string
+	type_				string
 }
 
 
@@ -51,24 +56,6 @@ type broadcast struct {
 }
 
 
-func (ws *WebsocketServer) broadcastToClients(clientsMap *map[*websocket.Conn]string, broadcast *broadcast) {
-	var mapCopy = make(map[*websocket.Conn]string)
-
-	ws.mu.RLock()
-	maps.Copy(mapCopy, *clientsMap)
-	ws.mu.RUnlock()
-
-	for client, mapID := range mapCopy {
-		if mapID == broadcast.id {
-			if err := client.WriteJSON(broadcast.data); err != nil {
-				log.Println(err)
-					continue
-			}
-		}
-	}
-}
-
-
 func NewServer() *WebsocketServer {
 	return &WebsocketServer{
 		upgrader: websocket.Upgrader{
@@ -79,12 +66,11 @@ func NewServer() *WebsocketServer {
 			WriteBufferSize: 1024,
 		},
 
+		clients: make(map[*websocket.Conn]*client),
+
 		connect: make(chan *connect),
 		disconnect: make(chan *disconnect),
 		broadcast: make(chan *broadcast),
-
-		clientsMsg: make(map[*websocket.Conn]string),
-		clientsNotif: make(map[*websocket.Conn]string),
 
 		mu: sync.RWMutex{},
 	}
@@ -96,33 +82,34 @@ func (ws *WebsocketServer) Run() {
 		select {
 			case conn := <-ws.connect:
 				ws.mu.Lock()
-				switch conn.type_ {
-					case types.MSG:
-						ws.clientsMsg[conn.conn] = conn.id
-					case types.NOTIF:
-						ws.clientsNotif[conn.conn] = conn.id
+				ws.clients[conn.conn] = &client{
+					id: conn.id,
+					type_: conn.type_,
 				}
 				ws.mu.Unlock()
 
 			case diss := <-ws.disconnect:
 				ws.mu.Lock()
-				switch diss.type_ {
-					case types.MSG:
-						delete(ws.clientsMsg, diss.conn)
-						diss.conn.Close()
-					case types.NOTIF:
-						delete(ws.clientsNotif, diss.conn)
-						diss.conn.Close()
-				}
+				delete(ws.clients, diss.conn)
 				ws.mu.Unlock()
+				diss.conn.Close()
 
 			case broadcast := <-ws.broadcast:
-				switch broadcast.type_ {
-					case types.MSG:
-						ws.broadcastToClients(&ws.clientsMsg, broadcast)
+				var mapCopy = make(map[*websocket.Conn]*client)
 
-					case types.NOTIF:
-						ws.broadcastToClients(&ws.clientsNotif, broadcast)
+				ws.mu.RLock()
+				maps.Copy(mapCopy, ws.clients)
+				ws.mu.RUnlock()
+
+				for client, info := range mapCopy {
+					if info.id == broadcast.id && info.type_ == broadcast.type_ {
+						if err := client.WriteJSON(broadcast.data); err != nil {
+							ws.mu.Lock()
+							delete(ws.clients, client)
+							ws.mu.Unlock()
+							client.Close()
+						}
+					}
 				}
 		}
 	}
@@ -173,7 +160,9 @@ func (ws *WebsocketServer) MSGWS(isItChatRoom bool) http.HandlerFunc {
 			}
 
 			if err := conn.ReadJSON(&message); err != nil {
-				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {}
+				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+					log.Println(err)
+				}
 				break 
 			}
 
@@ -229,7 +218,9 @@ func (ws *WebsocketServer) DELWS(w http.ResponseWriter, r *http.Request) {
 		_, msg, err := conn.ReadMessage()
 
 		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {}
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				log.Println(err)
+			}
 			break 
 		}
 
@@ -287,7 +278,9 @@ func (ws *WebsocketServer) NOTIFWS(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if err := conn.ReadJSON(notification); err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {}
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				log.Println(err)
+			}
 			break 
 		}
 
