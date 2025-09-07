@@ -21,7 +21,8 @@ func InitDB() error {
 		&DM{}, 
 		&Message{}, 
 		&Notification{}, 
-		&User{}, 
+		&User{},
+		&SessionData{}, 
 		&AuthVerification{},
 		&Setting{},
 		

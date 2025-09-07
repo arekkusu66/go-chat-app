@@ -1,12 +1,8 @@
 package models
 
 import (
-	"time"
-
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/gorilla/websocket"
 	"golang.org/x/oauth2"
-	"golang.org/x/time/rate"
 )
 
 
@@ -23,21 +19,14 @@ type MessageDatas struct {
 }
 
 
-type Client struct {
-	LastRequest			time.Time
-	Limiter				*rate.Limiter
+type RateLimiter struct {
+	Bucket				chan struct{}
 }
 
 
 type Claims struct {
 	ID					string
 	jwt.RegisteredClaims
-}
-
-
-type WSconf struct {
-	Clients				map[*websocket.Conn]string
-	Type				string
 }
 
 

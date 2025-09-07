@@ -10,28 +10,93 @@ import (
 	"os"
 	"time"
 
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"github.com/gorilla/sessions"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 )
 
 
-func oauth() models.Oauth {
-	return models.Oauth{
-		Config: &oauth2.Config{
-			ClientID: os.Getenv("CLIENT_ID"),
-			ClientSecret: os.Getenv("CLIENT_SECRET"),
-			RedirectURL: "http://localhost:5173/oauth/creds",
-			Endpoint: google.Endpoint,
-			Scopes: []string{"email", "profile"},
-		},
+var (
+	key = []byte(os.Getenv("SESSION_SECRET"))
+	store = sessions.NewCookieStore(key)
+)
+
+var oauth = &models.Oauth {
+	Config: &oauth2.Config{
+		ClientID: os.Getenv("CLIENT_ID"),
+		ClientSecret: os.Getenv("CLIENT_SECRET"),
+		RedirectURL: "http://localhost:5173/oauth/creds",
+		Endpoint: google.Endpoint,
+		Scopes: []string{"email", "profile"},
+	},
+}
+
+
+func saveToken(r *http.Request, w http.ResponseWriter, oa *models.Oauth, token *oauth2.Token, ctx context.Context) (*http.Client, error) {
+
+	session, _ := store.Get(r, "oauth")
+
+	var src = oauth2.ReuseTokenSource(token, oa.Config.TokenSource(ctx, token))
+
+	t, err := src.Token()
+	
+	if err != nil {
+		return nil, err
 	}
+
+	var id = uuid.NewString()
+
+	var tokenData = &models.SessionData{
+		ID: id,
+		Token: t,
+	}
+
+	models.DB.Create(tokenData)
+
+	session.Values["token_id"] = id
+	session.Save(r, w)
+
+	return oauth2.NewClient(ctx, src), nil
+}
+
+
+func newClient(w http.ResponseWriter, r *http.Request, code string, oa *models.Oauth) (*http.Client, error) {
+	var ctx = r.Context()
+
+	session, _ := store.Get(r, "oauth")
+	token_id, ok := session.Values["token_id"]
+
+	if ok {
+		var sessionData = &models.SessionData{}
+
+		if err := models.DB.First(sessionData, token_id).Error; err == nil {
+			if sessionData.Token.Valid() {
+				return saveToken(r, w, oa, sessionData.Token, ctx)
+			}
+		}
+	}
+
+	token, err := oa.Config.Exchange(ctx, code)
+
+	if err != nil {
+		return nil, err
+	}
+	
+	return saveToken(r, w, oa, token, ctx)
 }
 
 
 func OauthSignUpH(w http.ResponseWriter, r *http.Request) {
-	var url = oauth().Config.AuthCodeURL(utils.GenerateOauthState(), oauth2.AccessTypeOffline)
+	var state = utils.GenerateOauthState()
+
+	session, _ := store.Get(r, "oauth")
+
+	session.Values["state"] = state
+	session.Save(r, w)
+
+	var url = oauth.Config.AuthCodeURL(state, oauth2.AccessTypeOffline)
+
 	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 }
 
@@ -40,23 +105,26 @@ func OauthCredsH(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html")
 
 	var (
+		state	  =		r.URL.Query().Get("state")
 		code 	  = 	r.URL.Query().Get("code")
-		oauthC 	  = 	oauth()
 	)
 
-	token, err := oauthC.Config.Exchange(context.Background(), code)
+	session, _ := store.Get(r, "oauth")
+
+	if session.IsNew || session.Values["state"] != state {
+		http.Error(w, "invalid oauth state", http.StatusBadRequest)
+		return
+	}
+
+	delete(session.Values, "state")
+	session.Save(r, w)
+
+	client, err := newClient(w, r, code, oauth)
 
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "error trying to fetch datas: " + err.Error(), http.StatusInternalServerError)
 		return
 	}
-
-	if !token.Valid() {
-		http.Error(w, "token is invalid, please try to sign up again", http.StatusBadRequest)
-		return
-	}
-
-	var client = oauthC.Config.Client(context.Background(), token)
 
 	resp, err := client.Get("https://www.googleapis.com/oauth2/v2/userinfo")
 
@@ -75,7 +143,7 @@ func OauthCredsH(w http.ResponseWriter, r *http.Request) {
 	}
 
 
-	var id = uuid.New().String()
+	var id = uuid.NewString()
 
 	var newUser = models.User{
 		ID: id,
@@ -119,17 +187,16 @@ func OauthCredsH(w http.ResponseWriter, r *http.Request) {
 	}
 
 
-	models.DB.Create(&newUser)
-
-
-	var claims = &models.Claims{
-		ID: id,
+	if err := models.DB.Create(&newUser); err != nil {
+		http.Error(w, "user already exists!", http.StatusBadRequest)
+		return
 	}
 
-	jwtToken, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(os.Getenv("JWT_SECRET")))
+
+	jwtToken, err := utils.NewJWT(id)
 
 	if err != nil {
-		http.Error(w, "something went wrong", http.StatusInternalServerError)
+		http.Error(w, "error creating the token", http.StatusInternalServerError)
 		return
 	}
 
@@ -137,9 +204,8 @@ func OauthCredsH(w http.ResponseWriter, r *http.Request) {
 		Name: "token",
 		Value: jwtToken,
 		Path: "/",
-		SameSite: http.SameSiteLaxMode,
 		HttpOnly: true,
-		Secure: true,
+		SameSite: http.SameSiteLaxMode,
 	}
 
 	http.SetCookie(w, cookie)

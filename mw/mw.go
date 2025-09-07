@@ -6,43 +6,39 @@ import (
 	"net/http"
 	"sync"
 	"time"
-
-	"golang.org/x/time/rate"
 )
+
+
+func newRateLimiter(duration time.Duration) *models.RateLimiter {
+	var rl = &models.RateLimiter{
+		Bucket: make(chan struct{}, 1),
+	}
+
+	rl.Bucket <- struct{}{}
+
+	go func() {
+		var ticker = time.NewTicker(duration)
+
+		for {
+			<-ticker.C
+			select {
+				case rl.Bucket <- struct{}{}:
+				default:
+			}
+		}
+	}()
+
+	return rl
+}
 
 
 func RateLimiter(handle http.HandlerFunc, duration time.Duration) http.HandlerFunc {
 	var (
 		mu			sync.Mutex
-		clients	 =	make(map[string]*models.Client)
+		clients	 =	make(map[string]*models.RateLimiter)
 	)
 
-
-	go func() {
-		var ticker = time.NewTicker(time.Minute)
-		defer ticker.Stop()
-
-		for range ticker.C {
-			mu.Lock()
-			var idsToDelete = []string{}
-
-			for id, client := range clients {
-				if time.Since(client.LastRequest) > duration {
-					idsToDelete = append(idsToDelete, id)
-				}
-			}
-
-			for _, id := range idsToDelete {
-				delete(clients, id)
-			}
-
-			mu.Unlock()
-		}
-	}()
-
-
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-
 		if r.Method == http.MethodPost {
 			
 			var user models.User
@@ -57,25 +53,25 @@ func RateLimiter(handle http.HandlerFunc, duration time.Duration) http.HandlerFu
 	
 			mu.Lock()
 	
-			if _, found := clients[user.ID]; !found {
-				clients[user.ID] = &models.Client{Limiter: rate.NewLimiter(rate.Every(duration), 1)}
-			}
-	
-			clients[user.ID].LastRequest = time.Now()
+			rl, found := clients[user.ID]
 
-			var allowed = clients[user.ID].Limiter.Allow()
+			if !found {
+				rl = newRateLimiter(duration)
+				clients[user.ID] = rl
+			}
 	
 			mu.Unlock()
 
-			if !allowed {
-				http.Error(w, "too many requests", http.StatusTooManyRequests)
-				return
+			select {
+				case <-rl.Bucket:
+					handle.ServeHTTP(w, r)
+					return
+				default:
+					http.Error(w, "too many requests!", http.StatusTooManyRequests)
+					return
 			}
-			
-			handle.ServeHTTP(w, r)
 
 		} else {
-
 			handle.ServeHTTP(w, r)
 		}
 	})

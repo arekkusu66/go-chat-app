@@ -4,9 +4,6 @@ const id = msg_url.pathname.match(/\/chat\/(\d+)/)[1];
 const wsurl = `ws://${window.location.host}/msg/ws/` + id;
 const msgws = new WebSocket(wsurl);
 
-const delUrl = `ws://${window.location.host}/msg/ws/del/` + id;
-const delws = new WebSocket(delUrl);
-
 
 msgws.onopen = () => {
     console.log('connected');
@@ -21,7 +18,22 @@ msgws.onerror = (error) => {
 msgws.onmessage = (e) => {
     let message = JSON.parse(e.data);
 
-    addMessage(message);
+    switch (message.type) {
+        case 'MSG':
+            addMessage(message.data);
+            break;
+
+        case 'DEL':
+            document.querySelector(`#message-c-${message.data.id}`).remove();
+
+            Array.from(document.querySelectorAll(`#reply-${message.data.id}`))
+                .forEach(e => e.innerHTML = `<div><i style="color:red">Reply to deleted message</i></div>`);
+            
+            break;
+
+        default:
+            break;
+    };
 };
 
 
@@ -32,10 +44,13 @@ function sendMsg() {
     const id = msg_url.pathname.match(/\/chat\/(\d+)/)[1];
     
     let datas = {
-        text: message.value,
-        chatRoomId: parseInt(id),
-        replyId: parseInt(replyId.textContent),
-        replyStatus: 'not_deleted',
+        type: 'MSG',
+        data: {
+            text: message.value,
+            chatRoomId: parseInt(id),
+            replyId: parseInt(replyId.textContent),
+            replyStatus: 'not_deleted',
+        },
     };
 
     msgws.send(JSON.stringify(datas));
@@ -99,22 +114,11 @@ async function addMessage(message) {
 };
 
 
-delws.onerror = (error) => {
-    alert(error);
-};
-
-
-delws.onmessage = (e) => {
-    let data = JSON.parse(e.data);
-
-    document.querySelector(`#message-c-${data.id}`).remove();
-
-    Array.from(document.querySelectorAll(`#reply-${data.id}`))
-    .forEach(e => e.innerHTML = `<div><i style="color:red">Reply to deleted message</i></div>`);
-};
-
-
 function deleteMsg(button) {
-    const id = button.dataset.id;
-    delws.send(id);
+    const btnID = button.dataset.id;
+
+    msgws.send(JSON.stringify({
+        type: 'DEL',
+        data: {chatRoomId: parseInt(id), id: parseInt(btnID)},
+    }));
 };

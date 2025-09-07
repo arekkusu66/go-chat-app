@@ -4,6 +4,7 @@ import (
 	"gochat/models"
 	"gochat/mw"
 	"gochat/routes"
+	"gochat/types"
 	"log"
 	"net/http"
 	"time"
@@ -29,7 +30,7 @@ func init() {
 func main() {
 	var (
 		mux = http.NewServeMux()
-		ws = routes.NewServer()
+		ws = routes.NewHub()
 	)
 
 	go ws.Run()
@@ -67,11 +68,8 @@ func main() {
 	mux.HandleFunc("/password/reset", mw.RateLimiter(routes.PasswordResetH, time.Minute))
 	mux.HandleFunc("/password/new", mw.RateLimiter(routes.PasswordNewH, time.Minute))
 
-	mux.HandleFunc("/msg/ws/{id}", ws.MSGWS(true))
-	mux.HandleFunc("/dm/ws/{id}", ws.MSGWS(false))
-	mux.HandleFunc("/msg/ws/del/{id}", ws.DELWS)
-	mux.HandleFunc("/dm/ws/del/{id}", ws.DELWS)
-	mux.HandleFunc("/notif/ws", ws.NOTIFWS)
+	mux.HandleFunc("/msg/ws/{id}", ws.WSHandler(types.MSG))
+	mux.HandleFunc("/notif/ws", ws.WSHandler(types.NOTIF))
 
 
 	log.Fatal(http.ListenAndServe(":5173", mux))

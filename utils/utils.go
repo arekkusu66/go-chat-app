@@ -12,30 +12,64 @@ import (
 	"net/smtp"
 	"os"
 	"regexp"
+	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/gorilla/websocket"
 	"gorm.io/gorm"
 )
 
 
-var Wupg = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		return true
-	},
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
+func NewJWT(id string) (string, error) {
+	var claims = &models.Claims{
+		ID: id,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Second * 5)),
+		},
+	}
+
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(os.Getenv("JWT_SECRET")))
+}
+
+
+func refreshToken(jwtToken string) (string, error) {
+	var claims = &models.Claims{}
+
+	token, err := jwt.ParseWithClaims(jwtToken, claims, func(t *jwt.Token) (any, error) {
+		return []byte(os.Getenv("JWT_SECRET")), nil
+	})
+
+	if err != nil {
+		if err.Error() != "Token is expired" {
+			return NewJWT(claims.ID)
+		}
+	}
+
+	if claims.ExpiresAt != nil && claims.ExpiresAt.Time.After(time.Now()) {
+		return NewJWT(claims.ID)
+	}
+
+	if token != nil && token.Valid {
+		return jwtToken, nil
+	}
+
+	return "", errors.New("invalid token")
 }
 
 
 func ParseCookie(r *http.Request) (*models.Claims, error) {
-	cookie, err := r.Cookie("token")
+	tokenData, err := r.Cookie("token")
 
 	if err != nil {
 		return nil, err
 	}
 
-	token, err := jwt.ParseWithClaims(cookie.Value, &models.Claims{}, func(t *jwt.Token) (any, error) {
+	tokenString, err := refreshToken(tokenData.Value)
+
+	if err != nil {
+		return nil, err
+	}
+
+	token, err := jwt.ParseWithClaims(tokenString, &models.Claims{}, func(t *jwt.Token) (any, error) {
 		return []byte(os.Getenv("JWT_SECRET")), nil
 	})
 

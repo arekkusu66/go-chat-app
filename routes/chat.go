@@ -1,8 +1,6 @@
 package routes
 
 import (
-	"bufio"
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"gochat/models"
@@ -35,16 +33,10 @@ func CreateChatH(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
-	var reqBuf = new(bytes.Buffer)
-
-	if _, err := bufio.NewReader(r.Body).WriteTo(reqBuf); err != nil {
-		fmt.Println(err)
+	if err := json.NewDecoder(r.Body).Decode(&chatroomData); err != nil {
+		http.Error(w, "error decoding the datas", http.StatusBadRequest)
 		return
 	}
-
-
-	json.Unmarshal(reqBuf.Bytes(), &chatroomData)
 
 	if chatroomData.Title == "" {
 		http.Error(w, "the name of the chatroom cannot be empty!", http.StatusBadRequest)
@@ -152,7 +144,7 @@ func LeaveChatH(w http.ResponseWriter, r *http.Request) {
 
 	models.DB.Model(&user).Association("JoinedChats").Delete(&chatroom)
 
-	w.Write([]byte(fmt.Sprintf("<h3>join this chat!</h3><button hx-post=\"/join/chat/%d\" hx-trigger=\"click\" hx-target=\"#join\">click to join</button>", chatroom.ID)))
+	fmt.Fprintf(w, "<h3>join this chat!</h3><button hx-post=\"/join/chat/%d\" hx-trigger=\"click\" hx-target=\"#join\">click to join</button>", chatroom.ID)
 }
 
 
@@ -180,10 +172,10 @@ func GetOptionsH(w http.ResponseWriter, r *http.Request) {
 	var cancelBtn = `<button onclick="cancelOptions()">cancel</button>`
 	
 	if user.ID == message.UserID {
-		w.Write([]byte(fmt.Sprintf("<button onclick=\"deleteMsg(this)\" data-id=\"%s\">delete</button>%s", id, cancelBtn)))
+		fmt.Fprintf(w, "<button onclick=\"deleteMsg(this)\" data-id=\"%s\">delete</button>%s", id, cancelBtn)
 		return
 	} else {
-		w.Write([]byte(fmt.Sprintf("<button onclick=\"reply(this)\" data-id=\"%s\">reply</button>%s", id, cancelBtn)))
+		fmt.Fprintf(w, "<button onclick=\"reply(this)\" data-id=\"%s\">reply</button>%s", id, cancelBtn)
 		return
 	}
 }

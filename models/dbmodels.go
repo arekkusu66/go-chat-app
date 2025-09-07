@@ -3,6 +3,8 @@ package models
 import (
 	"database/sql"
 	"time"
+
+	"golang.org/x/oauth2"
 )
 
 
@@ -40,6 +42,12 @@ type User struct {
 
 	CreatedChats				[]ChatRoom			`gorm:"many2many:user_created_chats"`
 	JoinedChats					[]ChatRoom			`gorm:"many2many:user_joined_chats"`
+}
+
+
+type SessionData struct {
+	ID							string				`gorm:"primaryKey"`
+	*oauth2.Token
 }
 
 

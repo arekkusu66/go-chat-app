@@ -6,29 +6,15 @@ import (
 	"gochat/types"
 	"gochat/utils"
 	"net/http"
-	"os"
 	"time"
 
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
 
 
 func SignUpH(w http.ResponseWriter, r *http.Request) {	
-	var id = uuid.New().String()
-
-	var claims = &models.Claims{
-		ID: id,
-	}
-
-	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(os.Getenv("JWT_SECRET")))
-
-	if err != nil {
-		http.Error(w, "something went wrong", http.StatusInternalServerError)
-		return
-	}
-
+	var id = uuid.NewString()
 
 	if r.Method == http.MethodPost {
 		if err := r.ParseForm(); err != nil {
@@ -93,14 +79,19 @@ func SignUpH(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		jwtToken, err := utils.NewJWT(id)
+
+		if err != nil {
+			http.Error(w, "error creating the token", http.StatusInternalServerError)
+			return
+		}
 
 		var cookie = &http.Cookie{
 			Name: "token",
-			Value: token,
+			Value: jwtToken,
 			Path: "/",
-			SameSite: http.SameSiteLaxMode,
 			HttpOnly: true,
-			Secure: true,
+			SameSite: http.SameSiteLaxMode,
 		}
 
 		http.SetCookie(w, cookie)
@@ -127,7 +118,6 @@ func SignUpH(w http.ResponseWriter, r *http.Request) {
 
 
 func LoginH(w http.ResponseWriter, r *http.Request) {
-
 	if r.Method == http.MethodPost {
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, "couldnt get the datas from the form", http.StatusInternalServerError)
@@ -151,27 +141,23 @@ func LoginH(w http.ResponseWriter, r *http.Request) {
 
 		} else {
 
-			var claims = &models.Claims{
-				ID: user.ID,
-			}
-
-			token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(os.Getenv("JWT_SECRET")))
+			jwtToken, err := utils.NewJWT(user.ID)
 
 			if err != nil {
-				http.Error(w, "couldnt authenticate you", http.StatusInternalServerError)
+				http.Error(w, "error creating the token", http.StatusInternalServerError)
 				return
 			}
 
 			var cookie = &http.Cookie{
 				Name: "token",
-				Value: token,
+				Value: jwtToken,
 				Path: "/",
-				SameSite: http.SameSiteLaxMode,
 				HttpOnly: true,
-				Secure: true,
+				SameSite: http.SameSiteLaxMode,
 			}
 		
 			http.SetCookie(w, cookie)
+
 			http.Redirect(w, r, "/", http.StatusFound)
 		}
 	}
@@ -199,6 +185,9 @@ func LogOffH(w http.ResponseWriter, r *http.Request) {
 		Name: "token",
 		Value: "",
 		Path: "/",
+		Expires: time.Unix(0, 0),
+		MaxAge: -1,
+		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 	}
 

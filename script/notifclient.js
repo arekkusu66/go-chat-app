@@ -1,11 +1,16 @@
 const notif_url = `ws://${window.location.host}/notif/ws`;
-const notif_ws = new WebSocket(notif_url);
+const notifws = new WebSocket(notif_url);
 
 
-notif_ws.onmessage = (e) => {
-    let unreadNotifs = e.data;
+notifws.onmessage = () => {
+    let notifEl = document.querySelector('#notif-count');
 
-    document.querySelector('#notif-count').textContent = unreadNotifs;
+    let notif_count = parseInt(notifEl.textContent, 10);
+    if (isNaN(notif_count)) notif_count = 0;
+
+    notif_count++;
+
+    notifEl.textContent = notif_count;
 
     document.querySelector('#notifications').style = 'background-color: rgba(255, 0, 0, 0.5)';
 };
@@ -16,13 +21,16 @@ async function sendNotif(button) {
     let type = button.dataset.type;
 
     let notification = {
-        user: {
-            username: targetUsername
+        type: 'NOTIF',
+        data: {
+            user: {
+                username: targetUsername
+            },
+            type: type,
         },
-        type: type,
     };
 
-    notif_ws.send(JSON.stringify(notification));
+    notifws.send(JSON.stringify(notification));
 };
 
 
@@ -93,11 +101,11 @@ async function notifAction(button) {
 };
 
 
-notif_ws.onopen = () => {
+notifws.onopen = () => {
     console.log('connected');
 };
 
 
-notif_ws.onerror = (error) => {
+notifws.onerror = (error) => {
     alert(error);
 };
