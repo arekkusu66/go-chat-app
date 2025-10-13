@@ -169,6 +169,7 @@ func (c *client) readPump(r *http.Request) {
 		}
 
 		var user models.User
+		
 		if err := models.DB.Preload(clause.Associations).First(&user, "id = ?", userData.ID).Error; err != nil {
 			log.Println("error finding the user: ", err)
 			continue
@@ -326,16 +327,18 @@ func (hub *Hub) WSHandler(Type string) http.HandlerFunc {
 			Type: Type,
 		}
 
-		if Type == types.NOTIF {
-			userData, err := utils.ParseCookie(r)
 
-			if err != nil {
-				log.Fatal("error getting the user datas: ", err)
-			}
+		switch Type {
+			case types.MSG, types.DEL:
+				client.id = r.PathValue("id")
+			case types.NOTIF:
+				userData, err := utils.ParseCookie(r)
 
-			client.id = userData.ID
-		} else {
-			client.id = r.PathValue("id")
+				if err != nil {
+					log.Fatal("error getting the user datas: ", err)
+				}
+
+				client.id = userData.ID
 		}
 
 		go client.readPump(r)

@@ -1,6 +1,6 @@
 module gochat
 
-go 1.24.0
+go 1.25.1
 
 require (
 	github.com/a-h/templ v0.3.943
@@ -9,12 +9,12 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	gorm.io/driver/sqlite v1.6.0
-	gorm.io/gorm v1.30.3
+	gorm.io/gorm v1.31.0
 )
 
 require (
-	cloud.google.com/go/compute/metadata v0.8.0 // indirect
-	golang.org/x/sys v0.36.0 // indirect
+	cloud.google.com/go/compute/metadata v0.9.0 // indirect
+	golang.org/x/sys v0.37.0 // indirect
 )
 
 require (
@@ -24,7 +24,7 @@ require (
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/joho/godotenv v1.5.1
 	github.com/mattn/go-sqlite3 v1.14.32 // indirect
-	golang.org/x/crypto v0.41.0
-	golang.org/x/oauth2 v0.31.0
-	golang.org/x/text v0.28.0 // indirect
+	golang.org/x/crypto v0.43.0
+	golang.org/x/oauth2 v0.32.0
+	golang.org/x/text v0.30.0 // indirect
 )

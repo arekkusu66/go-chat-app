@@ -23,7 +23,7 @@ func NewJWT(id string) (string, error) {
 	var claims = &models.Claims{
 		ID: id,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Second * 5)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Minute * 5)),
 		},
 	}
 

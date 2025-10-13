@@ -18,6 +18,7 @@ func newRateLimiter(duration time.Duration) *models.RateLimiter {
 
 	go func() {
 		var ticker = time.NewTicker(duration)
+		defer ticker.Stop()
 
 		for {
 			<-ticker.C

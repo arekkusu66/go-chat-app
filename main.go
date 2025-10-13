@@ -17,12 +17,10 @@ import (
 func init() {
 	if err := godotenv.Load(); err != nil {
 		log.Fatal(err)
-		return
 	}
 
 	if err := models.InitDB(); err != nil {
 		log.Fatal(err)
-		return
 	}
 }
 
