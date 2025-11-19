@@ -3,75 +3,69 @@ package routes
 import (
 	"encoding/json"
 	"fmt"
+	"gochat/db"
 	"gochat/models"
+	"gochat/pages"
+	"gochat/types"
 	"gochat/utils"
 	"net/http"
 	"regexp"
-
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
+	"strconv"
+	"strings"
 )
 
 
 func CreateChatH(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	var chatroomData models.ChatRoom
-	var user models.User
-
-	userData, err := utils.ParseCookie(r)
+	id, status, err := utils.GetUserID(r)
 
 	if err != nil {
-		w.Write([]byte("couldnt retrieve user data"))
+		http.Error(w, err.Error(), status)
 		return
 	}
 
-	models.DB.Preload("CreatedChats").First(&user, "id = ?", userData.ID)
+	user, err := db.Query.GetUserById(r.Context(), id)
+
+	if err != nil {
+		http.Error(w, "user not found", http.StatusNotFound)
+		return
+	}
 
 	if !user.Verified {
 		http.Error(w, "you need to be verified in order to do that", http.StatusForbidden)
 		return
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&chatroomData); err != nil {
-		http.Error(w, "error decoding the datas", http.StatusBadRequest)
+	createdChatsCount, _ := db.Query.GetCreatedChatroomsCount(r.Context(), user.ID)
+
+	if createdChatsCount  >= 30 {
+		http.Error(w, "cannot create more than 30 chatrooms", http.StatusBadRequest)
 		return
 	}
 
-	if chatroomData.Title == "" {
-		http.Error(w, "the name of the chatroom cannot be empty!", http.StatusBadRequest)
-		return
+	var title = r.URL.Query().Get("title")
+
+	if strings.TrimSpace(title) == "" {
+		title = user.Username + "'s" + " " + "chatroom" + fmt.Sprint(createdChatsCount)
 	}
 
-	var newChatroom = models.ChatRoom{
-		Title: chatroomData.Title,
-		CreatedBy: user.ID,
-		CreatedByName: user.Username,
-	}
-
-	user.CreatedChats = append(user.CreatedChats, newChatroom)
-	models.DB.Save(&user)
-
-	if len(user.CreatedChats) > 30 {
-		http.Error(w, "you cant create more than 30 chatrooms!", http.StatusBadRequest)
+	if err := db.CreateChatroom(r.Context(), user.ID, title); err != nil {
+		http.Error(w, "couldnt create the chatroom", http.StatusInternalServerError)
 		return
 	}
 }
 
 
 func ChatH(w http.ResponseWriter, r *http.Request) {
-	userData, err := utils.ParseCookie(r)
+	userId, status, err := utils.GetUserID(r)
 
 	if err != nil {
-		http.Error(w, "couldnt retrieve user data", http.StatusInternalServerError)
+		http.Error(w, err.Error(), status)
 		return
 	}
 
-	var chatroom models.ChatRoom
-	var user models.User
-
-	models.DB.Preload("CreatedChats").Preload("JoinedChats").Preload("Messages").Preload("BlockedUsers").First(&user, "id = ?", userData.ID)
-	
+	user, _ := db.Query.GetUserById(r.Context(), userId)
 
 	var id = r.PathValue("id")
 
@@ -80,98 +74,113 @@ func ChatH(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := models.DB.Preload("Messages.User").Preload("Messages.User.BlockedUsers").Preload("Messages.Reply").Preload(clause.Associations).First(&chatroom, id).Error; err != nil && err == gorm.ErrRecordNotFound {
-		http.Error(w, "chatroom not found", http.StatusBadRequest)
+	intId, _ := strconv.ParseInt(id, 10, 64)
+
+	chatroomExists, _ := db.Query.CheckChatroomExistence(r.Context(), intId)
+
+	if !chatroomExists {
+		http.Error(w, "chatroom not found", http.StatusNotFound)
 		return
 	}
 
+	chatroom, _ := db.Query.GetChatroom(r.Context(), intId)
 
-	var chatroomDatas = models.ChatDatas{
-		ChatRoom: chatroom,
-		User: user,
-		AlreadyJoined: user.AlreadyJoined(chatroom),
+	pages.Chat(user, chatroom).Render(r.Context(), w)
+}
+
+
+func ChatActionsH(w http.ResponseWriter, r *http.Request) {
+	userId, status, err := utils.GetUserID(r)
+
+	if err != nil {
+		http.Error(w, err.Error(), status)
+		return
 	}
+
+	var id = r.URL.Query().Get("id")
 	
-
-	chat(chatroomDatas).Render(r.Context(), w)
-}
-
-
-func JoinChatH(w http.ResponseWriter, r *http.Request) {
-	userData, err := utils.ParseCookie(r)
-
-	if err != nil {
-		w.Write([]byte("you are not logged in!"))
+	if !regexp.MustCompile(`^\d+$`).MatchString(id) {
+		http.Error(w, "invalid id", http.StatusBadRequest)
 		return
 	}
 
-	var user models.User
-	models.DB.Preload("CreatedChats").Preload("JoinedChats").First(&user, "id = ?", userData.ID)
+	intId, _ := strconv.ParseInt(id, 10, 64)
 
-	if !user.Verified {
-		http.Error(w, "you need to be verified in order to do that", http.StatusForbidden)
-		return
+	alreadyJoined, _ := db.Query.CheckIfAlreadyJoined(r.Context(), db.CheckIfAlreadyJoinedParams{
+		UserID: userId,
+		ChatroomID: intId,
+	})
+
+	switch r.URL.Query().Get("action") {
+		case "join":
+			if alreadyJoined {
+				fmt.Fprint(w, "you havent joined this chatroom!")
+				return
+			}
+
+			db.Query.JoinChatroom(r.Context(), db.JoinChatroomParams{
+				ChatroomID: intId,
+				UserID: userId,
+			})
+
+			fmt.Fprint(w, (`
+				<div id="chat-joined">
+					<div id="reply">
+						<div id="id-reply">
+					</div>
+					</div><br /><br />
+			
+					<input type="text" id="send" placeholder="write a message" style="width:60px;height:35px"/>
+					<button onclick="sendMsg()" style="width:60px;height:35px">send</button>
+				</div>`))
+
+		case "leave":
+			if !alreadyJoined {
+				fmt.Fprint(w, "you havent joined this chatroom!")
+			}
+
+			db.Query.LeaveChatroom(r.Context(), db.LeaveChatroomParams{
+				UserID: userId,
+				ChatroomID: intId,
+			})
+
+			fmt.Fprintf(w, `
+				<h3>join this chat!</h3>
+				<button hx-post="/join/chat/%d" hx-trigger="click" hx-target="#join">click to join</button>`, intId)
+
+		default:
+			fmt.Fprint(w, "invalid action")
 	}
-
-	var chatroom models.ChatRoom
-	models.DB.First(&chatroom, r.PathValue("id"))
-
-	if user.AlreadyJoined(chatroom) {
-		w.Write([]byte("you already joined this chat!"))
-		return
-	}
-
-	user.JoinedChats = append(user.JoinedChats, chatroom)
-	models.DB.Save(&user)
-
-	w.Write([]byte(`<div id="chat-joined"><div id="reply"><div id="id-reply"></div></div><br /><br /><input type="text" id="send" placeholder="write a message" style="width:60px;height:35px"/><button onclick="sendMsg()" style="width:60px;height:35px">send</button></div>`))
-}
-
-
-func LeaveChatH(w http.ResponseWriter, r *http.Request) {
-	userData, err := utils.ParseCookie(r)
-
-	if err != nil {
-		http.Error(w, "couldnt retrieve user data", http.StatusInternalServerError)
-		return
-	}
-
-	var user models.User
-	models.DB.Preload("JoinedChats").First(&user, "id = ?", userData.ID)
-
-	var chatroom models.ChatRoom
-	models.DB.First(&chatroom, r.PathValue("id"))
-
-	models.DB.Model(&user).Association("JoinedChats").Delete(&chatroom)
-
-	fmt.Fprintf(w, "<h3>join this chat!</h3><button hx-post=\"/join/chat/%d\" hx-trigger=\"click\" hx-target=\"#join\">click to join</button>", chatroom.ID)
 }
 
 
 func GetOptionsH(w http.ResponseWriter, r *http.Request) {
-	userData, err := utils.ParseCookie(r)
+	userId, status, err := utils.GetUserID(r)
 
 	if err != nil {
-		http.Error(w, "couldnt retrieve user data", http.StatusInternalServerError)
+		http.Error(w, err.Error(), status)
 		return
 	}
 	
-	var user models.User
-	models.DB.First(&user, "id = ?", userData.ID)
-
-	
 	var id = r.URL.Query().Get("id")
+	
+	if !regexp.MustCompile(`^\d+$`).MatchString(id) {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
 
-	var message models.Message
-	if err := models.DB.First(&message, id).Error; err == gorm.ErrRecordNotFound {
+	intId, _ := strconv.ParseInt(id, 10, 64)
+
+	message, err := db.Query.GetMessageById(r.Context(), intId)
+
+	if err != nil {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
 
-
 	var cancelBtn = `<button onclick="cancelOptions()">cancel</button>`
 	
-	if user.ID == message.UserID {
+	if userId == message.UserID {
 		fmt.Fprintf(w, "<button onclick=\"deleteMsg(this)\" data-id=\"%s\">delete</button>%s", id, cancelBtn)
 		return
 	} else {
@@ -182,51 +191,55 @@ func GetOptionsH(w http.ResponseWriter, r *http.Request) {
 
 
 func GetMessageH(w http.ResponseWriter, r *http.Request) {
-	userData, err := utils.ParseCookie(r)
+	userId, status, err := utils.GetUserID(r)
 
 	if err != nil {
-		http.Error(w, "couldnt retrieve user data", http.StatusInternalServerError)
+		http.Error(w, err.Error(), status)
 		return
 	}
-
-	var user models.User
-	models.DB.Preload("Messages").Preload("BlockedUsers").First(&user, "id = ?", userData.ID)
 
 	var id = r.URL.Query().Get("id")
 
-	var message models.Message
-	if err := models.DB.Preload(clause.Associations).Preload("User.BlockedUsers").First(&message, id).Error; err != nil && err == gorm.ErrRecordNotFound {
-		http.Error(w, "message not found", http.StatusBadRequest)
+	if !regexp.MustCompile(`^\d+$`).MatchString(id) {
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	json.NewEncoder(w).Encode(&message)
-}
+	intId, _ := strconv.ParseInt(id, 10, 64)
 
+	isReply, _ := db.Query.CheckIfMessageIsReply(r.Context(), db.CheckIfMessageIsReplyParams{
+		ID: intId,
+		UserID: userId,
+	})
 
-func GetDatasH(w http.ResponseWriter, r *http.Request) {
-	userData, err := utils.ParseCookie(r)
+	isBlocked, _ := db.Query.CheckMessageUserRelation(r.Context(), db.CheckMessageUserRelationParams{
+		ID: intId,
+		UserID: userId,
+		Type: types.BLOCKED_USER,
+	})
+
+	if r.URL.Query().Get("type") == "0" {
+		json.NewEncoder(w).Encode(&models.ClientDatas{
+			IsReply: isReply,
+			IsBlocked: isBlocked,
+		})
+
+		return
+	}
+
+	datas, err := db.Query.GetFullMessageDatas(r.Context(), intId)
 
 	if err != nil {
-		http.Error(w, "couldnt retrieve user data", http.StatusInternalServerError)
-		return
-	}
-
-	var user models.User
-	models.DB.Preload("Messages").Preload("BlockedUsers").First(&user, "id = ?", userData.ID)
-
-
-	var id = r.URL.Query().Get("id")
-
-	var message models.Message
-	if err := models.DB.Preload("User.BlockedUsers").First(&message, id).Error; err != nil && err == gorm.ErrRecordNotFound {
-		json.NewEncoder(w).Encode(&models.MessageDatas{IsReply: false, IsBlocked: false})
+		json.NewEncoder(w).Encode(&models.MessageDatas{})
 		return
 	}
 
 	var messageDatas = models.MessageDatas{
-		IsReply: utils.IsReply(user, fmt.Sprint(message.ReplyID)),
-		IsBlocked: user.CheckUserRelations(message.User, user.BlockedUsers),
+		GetFullMessageDatasRow: datas,
+		ClientDatas: models.ClientDatas{
+			IsReply: isReply,
+			IsBlocked: isBlocked,
+		},
 	}
 
 	json.NewEncoder(w).Encode(&messageDatas)

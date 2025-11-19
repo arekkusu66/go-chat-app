@@ -1,42 +1,43 @@
 package routes
 
 import (
-	"gochat/models"
+	"gochat/db"
+	"gochat/pages"
 	"gochat/types"
 	"gochat/utils"
+	"log"
 	"net/http"
 )
 
 
 func SettingsH(w http.ResponseWriter, r *http.Request) {
-	userData, err := utils.ParseCookie(r)
+	id, status, err := utils.GetUserID(r)
 
 	if err != nil {
-		http.Error(w, "couldnt retrieve user datas", http.StatusInternalServerError)
+		http.Error(w, err.Error(), status)
 		return
 	}
-
-	var user models.User
-	models.DB.Preload("Settings").First(&user, "id = ?", userData.ID)
-
 	
 	if r.Method == http.MethodPost {
 		if err := r.ParseForm(); err != nil {
-			http.Error(w, "couldnt get the datas from the form", http.StatusInternalServerError)
+			log.Println(err)
+			http.Error(w, "couldnt parse the datas", http.StatusInternalServerError)
 			return
 		}
 
-		if err := utils.SettingMod(r, user, types.ACCEPT_FRIEND_REQ, "accepts_friend_reqs"); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
+		var settings = r.PostForm
 
-		if err := utils.SettingMod(r, user, types.DM_REQ, "accepts_dm_reqs"); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+		if err := db.Query.UpdateSettings(r.Context(), db.UpdateSettingsParams{
+			UserID: id,
+			AcceptsFriendReqs: settings.Get(string(types.ACCEPTS_FRIEND_REQS)),
+			AcceptsDmReqs: settings.Get(string(types.ACCEPTS_DM_REQS)),
+		}); err != nil {
+			http.Error(w, "couldnt update the settings", http.StatusInternalServerError)
 			return
 		}
 	}
 
+	user, _ := db.Query.GetUserById(r.Context(), id)
 
-	user_settings(user).Render(r.Context(), w)
+	pages.UserSettings(user).Render(r.Context(), w)
 }

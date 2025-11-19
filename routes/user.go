@@ -1,50 +1,42 @@
 package routes
 
 import (
-	"database/sql"
-	"gochat/models"
+	"gochat/db"
+	"gochat/pages"
 	"gochat/utils"
 	"io"
 	"net/http"
-
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 
 func UserPageH(w http.ResponseWriter, r *http.Request) {
-	var user, currentUser models.User
-
-	if err := models.DB.Preload(clause.Associations).Preload("DMS.Users").First(&user, "username = ?", r.PathValue("username")).Error; err != nil && err == gorm.ErrRecordNotFound{
-		http.Error(w, "user not found!", http.StatusNotFound)
-		return
-	}
-
-	userData, err := utils.ParseCookie(r)
+	user, err := db.Query.GetUserByName(r.Context(), r.PathValue("username"))
 
 	if err != nil {
-		userpage(user, models.User{}).Render(r.Context(), w)
+		pages.UserPage(db.User{}, db.User{}).Render(r.Context(), w)
 		return
 	}
 
-	models.DB.Preload(clause.Associations).Preload("DMS.Users").First(&currentUser, "id = ?", userData.ID)
+	id, _, err := utils.GetUserID(r)
 
+	if err != nil {
+		pages.UserPage(user, db.User{}).Render(r.Context(), w)
+		return
+	}
 
-	userpage(user, currentUser).Render(r.Context(), w)
+	currentUser, _ := db.Query.GetUserById(r.Context(), id)
+
+	pages.UserPage(user, currentUser).Render(r.Context(), w)
 }
 
 
 func EditProfileH(w http.ResponseWriter, r *http.Request) {
-	userData, err := utils.ParseCookie(r)
+	id, status, err := utils.GetUserID(r)
 
 	if err != nil {
-		http.Error(w, "couldnt retrieve user data", http.StatusInternalServerError)
+		http.Error(w, err.Error(), status)
 		return
 	}
-
-	var user models.User
-	models.DB.First(&user, "id = ?", userData.ID)
-
 
 	switch r.URL.Query().Get("edit") {
 		case "description":
@@ -55,62 +47,67 @@ func EditProfileH(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
+			if err := db.Query.UpdateUser(r.Context(), db.UpdateUserParams{
+				ID: id,
+				Description: string(description),
+			}); err != nil {
+				http.Error(w, "error saving the datas", http.StatusInternalServerError)
+				return
+			}
+
 			w.Write(description)
-			
-			user.Description = sql.NullString{String: string(description), Valid: true}
-			models.DB.Save(&user)
-	}
-}
-
-
-func CheckAvailabilityH(w http.ResponseWriter, r *http.Request) {
-	var existingUser models.User
-	var newUsername = r.PathValue("username")
-
-	if err := models.DB.First(&existingUser, "username = ?", newUsername).Error; err != nil && err == gorm.ErrRecordNotFound {
-		w.Write([]byte("username available"))
-		return
-	}
-
-	if existingUser.ID != "" {
-		http.Error(w, "username already in use", http.StatusBadRequest)
-		return
 	}
 }
 
 
 func EditUsernameH(w http.ResponseWriter, r *http.Request) {
-	userData, err := utils.ParseCookie(r)
+	id, status, err := utils.GetUserID(r)
 
 	if err != nil {
-		http.Error(w, "couldnt retrieve user data", http.StatusInternalServerError)
+		http.Error(w, err.Error(), status)
 		return
 	}
 
-	var user models.User
-	models.DB.First(&user, "id = ?", userData.ID)
-
 	var newUsername = r.URL.Query().Get("username")
+
+	usernameExists, _ := db.Query.CheckUsernameAvailability(r.Context(), newUsername)
+
+	if usernameExists {
+		http.Error(w, "this is username is already in use", http.StatusBadRequest)
+		return
+	}
 
 	if !utils.Validate("username", newUsername) {
 		http.Error(w, "this username is invalid!", http.StatusBadRequest)
 		return
 	}
 
-	user.Username = newUsername
-	models.DB.Save(&user)
+	if err := db.Query.UpdateUser(r.Context(), db.UpdateUserParams{
+		ID: id,
+		Username: newUsername,
+	}); err != nil {
+		http.Error(w, "couldnt update the username", http.StatusBadRequest)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
 }
 
 
 func UserActionsH(w http.ResponseWriter, r *http.Request) {
-	userData, err := utils.ParseCookie(r)
+	id, status, err := utils.GetUserID(r)
 
 	if err != nil {
-		http.Error(w, "couldnt retrieve user data", http.StatusInternalServerError)
+		http.Error(w, err.Error(), status)
 		return
 	}
 
-	var user, targetUser models.User
+	user, _ := db.Query.GetUserById(r.Context(), id)
+	
+	if !user.Verified {
+		http.Error(w, "you need to be verified in order to do that", http.StatusForbidden)
+		return
+	}
 
 	var username = r.URL.Query().Get("username")
 
@@ -119,42 +116,55 @@ func UserActionsH(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	models.DB.Preload(clause.Associations).Preload("DMS.Users").First(&user, "id = ?", userData.ID)
-
+	targetUser, err := db.Query.GetUserByName(r.Context(), username)
 	
-	if !user.Verified {
-		http.Error(w, "you need to be verified in order to do that", http.StatusForbidden)
-		return
-	}
-
-
-	if err := models.DB.Preload(clause.Associations).Preload("DMS.Users").First(&targetUser, "username = ?", username).Error; err != nil && err == gorm.ErrRecordNotFound {
+	if err != nil {
 		http.Error(w, "this user doesnt exists", http.StatusBadRequest)
 		return
 	}
 
-
 	switch r.URL.Query().Get("type") {
 		case "add":
-			user.Add(&targetUser, w)
+			if status, err := db.AddFriend(r.Context(), user.ID, targetUser.ID); err != nil {
+				http.Error(w, err.Error(), status)
+				return
+			}
 
 		case "cancel":
-			user.Cancel(&targetUser, w)
+			if status, err := db.CancelFriendRequest(r.Context(), user.ID, targetUser.ID); err != nil {
+				http.Error(w, err.Error(), status)
+				return
+			}
 
 		case "accept":
-			user.Accept(&targetUser, w)
+			if status, err := db.AcceptFriendRequest(r.Context(), user.ID, targetUser.ID); err != nil {
+				http.Error(w, err.Error(), status)
+				return
+			}
 
 		case "ignore":
-			user.Ignore(&targetUser, w)
+			if status, err := db.IgnoreFriendRequest(r.Context(), user.ID, targetUser.ID); err != nil {
+				http.Error(w, err.Error(), status)
+				return
+			}
 
 		case "block":
-			user.Block(&targetUser, w)
+			if status, err := db.BlockUser(r.Context(), user.ID, targetUser.ID); err != nil {
+				http.Error(w, err.Error(), status)
+				return
+			}
 
 		case "unblock":
-			user.Unblock(&targetUser, w)
+			if status, err := db.UnblockUser(r.Context(), user.ID, targetUser.ID); err != nil {
+				http.Error(w, err.Error(), status)
+				return
+			}
 
 		case "senddm":
-			user.SendDM(&targetUser, w)
+			if status, err := db.SendDM(r.Context(), user.ID, targetUser.ID); err != nil {
+				http.Error(w, err.Error(), status)
+				return
+			}
 
 		default:
 			http.Error(w, "invalid action", http.StatusBadRequest)

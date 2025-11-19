@@ -1,14 +1,11 @@
 function sendDatas() {
     const title = document.querySelector('#chatroom-title')
 
-    fetch('/create/chat', {
+    fetch(`/create/chat?title=${title.value}`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-            title: title.value
-        })
+        }
     }).catch((err) => console.log(err));
 
     title.value = '';
@@ -19,17 +16,11 @@ async function changeUsername() {
     const newUsername = document.querySelector('#new-username');
 
     try {
-        let existsResponse = await fetch(`/exists/${newUsername.value}`, {method:'POST'});
-
-        if (!existsResponse.ok) {
-            alert('this username already exists!');
-            throw new Error('username already in use!');
-        };
-    
         await fetch(`/edit/username?username=${newUsername.value}`, {method:'POST'});
+
     } catch (err) {
+        alert(err);
         console.log(err);
-        return;
     };
 };
 
@@ -67,21 +58,31 @@ async function showMessage(button) {
     const id = button.dataset.id;
 
     try {
-
         const response = await fetch(`/get/message?id=${id}`, {
             method: 'POST'
         });
 
+        const datas = await response.json();
 
-        const message = await response.json();
+        console.log(datas);
 
         const hide = `<button onclick="hideMessage(this)" data-id="${id}">Hide</button>`;
 
-        const chatOP = `<h5 style="color:${message.userId === message.chatOp.String ? 'blue' : 'rgb(177, 6, 6)'}">${message.user.username}${message.userId === message.chatOp.String ? ' - OP' : ''}</h5>`;
+        const chatOP = `
+            <h5 
+                style="color:${datas.message.user_id === datas.chatroom.creator_id ? 'blue' : 'rgb(177, 6, 6)'}">
+                
+                ${datas.user.username}${datas.message.user_id === datas.chatroom.creator_id ? ' - OP' : ''}
+            </h5>`;
 
-        const replies = `${message.replyId !== 0 && message.reply ? (`<div id="reply-${message.replyId}"><a href="#message-${message.replyId}">reply to ${message.reply.text}</a></div>`) : ''}`;
+        const replies = `
+            ${datas.message.reply_id.Valid && datas.reply_text.Valid ? 
+            
+            `<div id="reply-${datas.message.reply_id}">
+                <a href="#message-${datas.message.reply_id.Int64}">reply to ${datas.reply_text.String}</a>
+            </div>` : ''}`;
 
-        const msgDatas = `<h3 id="message-${message.id}"></h3><i>at ${formatDate(message.date)}</i><hr />`;    
+        const msgDatas = `<h3 id="message-${id}"></h3><i>at ${formatDate(datas.message.date)}</i><hr />`;    
 
         document.querySelector(`#message-c-${id}`).innerHTML = `
             ${hide}
@@ -90,10 +91,11 @@ async function showMessage(button) {
             ${msgDatas}
         `;
 
-        document.querySelector(`#message-${message.id}`).textContent = message.text;
+        document.querySelector(`#message-${id}`).textContent = datas.message.text;
 
     } catch (error) {
         console.log(error);
+        return;
     };
 };
 

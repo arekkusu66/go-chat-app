@@ -1,26 +1,36 @@
 package utils
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
 	crrand "crypto/rand"
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"gochat/models"
 	"gochat/types"
+	"io"
+	"log"
 	"math/big"
 	"net/http"
-	"net/smtp"
 	"os"
 	"regexp"
+	"runtime"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"gorm.io/gorm"
+	"github.com/google/uuid"
+	"gopkg.in/gomail.v2"
 )
 
+type Claims struct {
+	ID	uuid.UUID
+	jwt.RegisteredClaims
+}
 
-func NewJWT(id string) (string, error) {
-	var claims = &models.Claims{
+
+func NewJWT(id uuid.UUID) (string, error) {
+	var claims = &Claims{
 		ID: id,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Minute * 5)),
@@ -32,7 +42,7 @@ func NewJWT(id string) (string, error) {
 
 
 func refreshToken(jwtToken string) (string, error) {
-	var claims = &models.Claims{}
+	var claims = &Claims{}
 
 	token, err := jwt.ParseWithClaims(jwtToken, claims, func(t *jwt.Token) (any, error) {
 		return []byte(os.Getenv("JWT_SECRET")), nil
@@ -56,46 +66,108 @@ func refreshToken(jwtToken string) (string, error) {
 }
 
 
-func ParseCookie(r *http.Request) (*models.Claims, error) {
+func parseCookie(r *http.Request) (*Claims, error) {
 	tokenData, err := r.Cookie("token")
 
 	if err != nil {
+		log.Println("no token in the cookie", err)
 		return nil, err
 	}
 
 	tokenString, err := refreshToken(tokenData.Value)
 
 	if err != nil {
+		log.Println("couldnt refresh token", err)
 		return nil, err
 	}
 
-	token, err := jwt.ParseWithClaims(tokenString, &models.Claims{}, func(t *jwt.Token) (any, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(t *jwt.Token) (any, error) {
 		return []byte(os.Getenv("JWT_SECRET")), nil
 	})
 
 	if err != nil {
+		log.Println("couldnt parse the token", err)
 		return nil, err
 	}
 
-	return token.Claims.(*models.Claims), nil
+	return token.Claims.(*Claims), nil
 }
 
 
-func IsReply(user models.User, replyID string) bool {
-	if replyID == "" || replyID == "0" {
-		return false
+func GetUserID(r *http.Request) (uuid.UUID, int, error) {
+	userDatas, err := parseCookie(r)
+
+	if err != nil || userDatas.ID == uuid.Nil {
+		return uuid.UUID{}, http.StatusInternalServerError, errors.New("couldnt retrieve the user datas")
 	}
 
-	var message models.Message
-	if err := models.DB.First(&message, replyID).Error; err != nil && err == gorm.ErrRecordNotFound {
-		return false
+	return userDatas.ID, 0, nil
+}
+
+func ServeDir(dirname string, mux *http.ServeMux) {
+	mux.Handle(
+		fmt.Sprintf("%s/", dirname), 
+		http.StripPrefix(fmt.Sprintf("%s/", dirname), 
+		http.FileServer(
+			http.Dir(fmt.Sprintf(".%s", dirname)))))
+}
+
+
+func EncryptAES(plainText string) (string, error) {
+	block, err := aes.NewCipher([]byte(os.Getenv("AES_SECRET")))
+
+	if err != nil {
+		return "", err
 	}
 
-	if message.UserID == user.ID {
-		return true
+	gcm, err := cipher.NewGCM(block)
+
+	if err != nil {
+		return "", err
 	}
 
-	return false
+	var nonce = make([]byte, gcm.NonceSize())
+
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return "", err
+	}
+
+	var cipherText = gcm.Seal(nonce, nonce, []byte(plainText), nil)
+
+	return base64.StdEncoding.EncodeToString(cipherText), nil
+}
+
+
+func DecryptAES(cipherText string) (string, error) {
+	data, err := base64.StdEncoding.DecodeString(cipherText)
+
+	if err != nil {
+		return "", err
+	}
+
+	block, err := aes.NewCipher([]byte(os.Getenv("AES_SECRET")))
+
+	if err != nil {
+		return "", err
+	}
+
+	gcm, err := cipher.NewGCM(block)
+
+	if err != nil {
+		return "", err
+	}
+
+	var nonceSize = gcm.NonceSize()
+
+	nonce, text := data[:nonceSize], data[nonceSize:]
+
+	plainText, err := gcm.Open(nil, nonce, text, nil)
+
+	if err != nil {
+		return "", err
+	}
+
+	return string(plainText), nil
 }
 
 
@@ -106,7 +178,6 @@ func GenerateToken() string {
 
 	for i := range 8 {
 		num, _ := crrand.Int(crrand.Reader, big.NewInt(int64(len(chars))))
-
 		ret[i] = chars[num.Int64()]
 	}
 
@@ -119,35 +190,33 @@ func GenerateOauthState() string {
 
 	crrand.Read(b)
 
-	return base64.StdEncoding.EncodeToString(b)
+	return base64.URLEncoding.EncodeToString(b)
 }
 
 
-func SendVerificationEmail(user models.User, verifType, origin string) error {
+func SendVerificationEmail(verifType types.Verification, token string, email, origin string) error {
+	var m = gomail.NewMessage()
 
-	var verifLink, subject, body string
+	m.SetHeader("From", os.Getenv("GMAIL_EMAIL_FROM"))
+	m.SetHeader("To", email)
 
 	switch verifType {
-		case types.EMAIL_VERIFY:
+		case types.EMAIL_VERIFICATION:
+			var verifLink = fmt.Sprintf("http://%s/email/verification?token=%s", origin, token)
 
-			verifLink = fmt.Sprintf("http://%s/email/verification?token=%s", origin, user.EmailVerification.Token)
-			subject = "Subject: Email verification link" 
-			body = fmt.Sprintf("<a href=\"%s\">Verify email</a>", verifLink)
+			m.SetHeader("Subject", "Email verification link")
+			m.SetBody(`text/html;charset="UTF-8"`, fmt.Sprintf("<a href=\"%s\">Verify email</a>", verifLink))
 
 		case types.PASSWORD_RESET:
+			var verifLink = fmt.Sprintf("http://%s/password/new?token=%s", origin, token)
 
-			verifLink = fmt.Sprintf("http://%s/password/new?token=%s", origin, user.PasswordVerification.Token)
-			subject = "Subject: Password reset link"
-			body = fmt.Sprintf("<a href=\"%s\">Reset password</a>", verifLink)
+			m.SetHeader("Subject", "Password reset link")
+			m.SetBody(`text/html;charset="UTF-8"`, fmt.Sprintf("<a href=\"%s\">Reset password</a>", verifLink))
 	}
 
-	var (
-		auth = smtp.PlainAuth("", os.Getenv("EMAIL_FROM"), os.Getenv("EMAIL_APP_PASSWORD"), "smtp.gmail.com")
-		headers = `Content-Type:text/html;charset="UTF-8";`
-		message = subject + "\n" + headers + "\n\n" + body
-	)
+	var d = gomail.NewDialer("smtp.gmail.com", 587, os.Getenv("GMAIL_EMAIL_FROM"), os.Getenv("GMAIL_APP_PASSWORD"))
 
-	return smtp.SendMail("smtp.gmail.com:587", auth, os.Getenv("EMAIL_FROM"), []string{user.Email}, []byte(message))
+	return d.DialAndSend(m)
 }
 
 
@@ -176,15 +245,10 @@ func Validate(credType, cred string) bool {
 }
 
 
-func SettingMod(r *http.Request, user models.User, settingType, dbField string) error {
-	switch r.PostFormValue(settingType) {
-		case "yes":
-			models.DB.Model(&models.Setting{}).Where("user_id = ?", user.ID).Update(dbField, true)
-			return nil
-		case "no":
-			models.DB.Model(&models.Setting{}).Where("user_id = ?", user.ID).Update(dbField, false)
-			return nil
-		default:
-			return errors.New("invalid action")
-	}
+func GetFuncInfo() string {
+	pc, _, line, _ := runtime.Caller(1)
+	
+	var fnInfo = runtime.FuncForPC(pc)
+
+	return "Line " + fmt.Sprint(line) + " " + fnInfo.Name()
 }

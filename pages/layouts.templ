@@ -1,10 +1,11 @@
-package routes
+package pages
 
-import "gochat/models"
+import "gochat/db"
 import "fmt"
+import "context"
 
 
-css notifications() {
+css Notifications() {
     width: 300px;
     height: 100px;
     position: absolute;
@@ -14,23 +15,28 @@ css notifications() {
 }
 
 
-css unreads() {
+css unreadNotif() {
     background-color: rgba(255, 0, 0, 0.5);
 }
 
 
-templ user_notifications(user models.User) {
+templ UserNotifications(ctx context.Context, user db.User) {
     <script src="/script/notifclient.js" defer></script>
     <script src="/script/scripts.js" defer></script>
 
-    <div id="notifications" class={notifications(), templ.KV(unreads(), user.AreThereUnreadNotifs())}>
+    {{ unreadNotifsExist, _ := db.Query.AreThereUnreadNotifications(ctx, user.ID) }}
+
+    <div id="notifications" class={Notifications(), templ.KV(unreadNotif(), unreadNotifsExist)}>
         <button onclick="showNotifications()">Show</button>
 
         <p>
             Notifications
             <b id="notif-count">
-                if user.UnreadNotifsCount() != 0 {
-                    {fmt.Sprint(user.UnreadNotifsCount())}
+
+                {{ count, _ := db.Query.UnreadNotificationsCount(ctx, user.ID) }}
+                
+                if count != 0 {
+                    {fmt.Sprint(count)}
                 }
             </b>
         </p>

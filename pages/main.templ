@@ -1,0 +1,426 @@
+package pages
+
+import (
+    "gochat/db"
+    "fmt"
+	"gochat/types"
+    "database/sql"
+	"github.com/google/uuid"
+)
+
+
+templ Home(user *db.User) {
+    <!DOCTYPE html>
+
+    <title>chatrooms</title>
+
+    <script src="/script/scripts.js" defer></script>
+
+    if user == nil {
+        
+        <h1>You are not logged in so you cannot access the chatrooms!</h1>
+        <h3>Go to <a href="/signup">signup page</a> to make an account or to log in</h3>
+
+    } else {
+
+        @UserNotifications(ctx, *user)
+
+        if !user.Verified {
+            <h2>
+                Your account is not verified yet, you may want to verify it 
+                <a href="/email/verification/send">here</a>
+            </h2>
+        }
+
+        <h1>
+            Welcome {user.Username}
+        </h1>
+
+        <h2>
+            <a href={"/user/" + user.Username}>Go to profile -></a>
+        </h2>
+
+        <input placeholder="chat room title" id="chatroom-title" />
+        <button onclick="sendDatas()">create a chatroom</button>
+
+        {{
+            createdChatrooms, _ := db.Query.GetCreatedChatrooms(ctx, user.ID) 
+        }}
+
+        @UserChatrooms(
+            createdChatrooms, 
+            "your chatrooms", 
+            "you havent create any chatroom yet", 
+            true,
+        )
+
+        {{
+            joinedChatrooms, _ := db.Query.GetJoinedChatrooms(ctx, user.ID)
+        }}
+
+        @UserChatrooms(
+            joinedChatrooms, 
+            "joined chatrooms", 
+            "you havent join any chatroom", 
+            false,
+        )
+
+        {{
+            availableChatrooms, _ := db.Query.GetAvailableChatrooms(ctx, db.GetAvailableChatroomsParams{
+                UserID: user.ID,
+                Limit: 50,
+                Offset: 0,
+            })
+        }}
+
+        @UserChatrooms(
+            availableChatrooms,
+            "available chatrooms", 
+            "there are no chatrooms yet, but you can create one!", 
+            false,
+        )
+    }
+}
+
+
+templ Chat(user db.User, chatroom db.Chatroom) {
+    <!DOCTYPE html>
+
+    <title>{chatroom.Title}</title>
+    
+    <script src="/script/msgclient.js?v=2.64" defer></script>
+    <script src="/script/htmx.js" defer></script>
+    <script src="/script/scripts.js" defer></script>
+
+    @UserNotifications(ctx, user)
+
+    <div>
+        <p>joined users:</p>
+        <p style="color:green">
+
+            {{ joinedUsers, _ := db.Query.GetAllJoinedUsers(ctx, chatroom.ID) }}
+
+            for _, user := range joinedUsers {
+                <i>{user.Username + ",  "}</i>
+            }
+        </p>
+    </div>
+
+    {{
+        alreadyJoined, _ := db.Query.CheckIfAlreadyJoined(ctx, db.CheckIfAlreadyJoinedParams{
+            ChatroomID: chatroom.ID,
+            UserID: user.ID,
+        })
+    }}
+
+    if alreadyJoined {
+        @AlreadyJoined(chatroom, user)
+    } else {
+        @NotJoined(chatroom, user)
+    }
+
+    {{
+        messages, _ := db.Query.GetAllMessages(ctx, chatroom.ID)
+    }}
+
+    <div id="messages">
+        for _, message := range messages {
+            {{
+                messageDatas, _ := db.Query.GetFullMessageDatas(ctx, message.ID)
+            }}
+
+            @MessageUser(messageDatas, user)
+        }
+    </div>
+}
+
+
+templ DmChat(dm db.Dm, user db.User) {
+    <!DOCTYPE html>
+
+    <script src="/script/msgclient.js?v=2.64" defer></script>
+    <script src="/script/htmx.js" defer></script>
+    <script src="/script/scripts.js" defer></script>
+
+    @UserNotifications(ctx, user)
+
+
+    if !user.Verified {
+        <h2>Your account is not verified yet, you may want to verify it 
+            <a href="/email/verification/send">here</a>
+        </h2>
+    }
+
+    if dm.Status == "not_accepted" && dm.User2ID == user.ID {
+        @DmNotAccepted(dm)
+    } else {
+        @DmAccepted()
+    }
+
+    {{ messages, _ := db.Query.GetDMmessages(ctx, sql.NullInt64{Int64: dm.ID, Valid: true}) }}
+
+    <div id="messages">
+        for _, message := range messages {
+            {{
+                messageDatas, _ := db.Query.GetFullMessageDatas(ctx, message.ID)
+            }}
+
+            @MessageUser(messageDatas, user)
+        }
+    </div>
+}
+
+
+templ DmChatrooms(user db.User) {
+    <!DOCTYPE html>
+
+    @UserNotifications(ctx, user)
+
+
+    if !user.Verified {
+        <h2>Your account is not verified yet, you may want to verify it 
+            <a href={"/email/verification/send"}>here</a>
+        </h2>
+    }
+
+
+    <div id="dms">
+        
+        {{
+            dms, _ := db.Query.GetAllDMsWithStatus(ctx, db.GetAllDMsWithStatusParams{
+                Status: types.ACCEPTED_DM,
+                User1ID: user.ID,
+            }) 
+        }}
+
+        if len(dms) == 0 {
+            <h3>You have no dms yet</h3>
+        } else {
+            for _, dm := range dms {
+                <div>
+                    {{ lastMessage, _ := db.Query.GetDMLastMessage(ctx, dm.ID) }}
+                    {{ lastMessageUser, _ := db.Query.GetUserByMessage(ctx, lastMessage.ID) }}
+
+                    <a href={"/dm/" + fmt.Sprint(dm.ID)}>{lastMessageUser.Username}</a>
+                    
+                    if lastMessage.ID != 0 {
+                        if lastMessage.UserID == user.ID {
+                            <p>{"you: " + lastMessage.Text}</p>
+                        } else {
+                            <p>{lastMessageUser.Username + ": " + lastMessage.Text}</p>
+                        }
+                    }
+                    
+                </div>
+            }
+        } 
+
+    </div>
+
+    {{
+        dmRequests, _ := db.Query.GetAllDMsWithStatus(ctx, db.GetAllDMsWithStatusParams{
+            Status: types.NOT_ACCEPTED_DM,
+            User1ID: user.ID,
+        }) 
+    }}
+
+    <div id="dm-requests">
+
+        if len(dmRequests) != 0 {
+            <p>Received requests:</p>
+            
+            for _, dm := range dmRequests {
+                {{
+                    otherUser, _ := db.Query.GetTheOtherDMuser(ctx, db.GetTheOtherDMuserParams{
+                        ID: dm.ID,
+                        User1ID: user.ID,
+                    })
+                }}
+
+                <div>
+                    <a href={"/dm/" + fmt.Sprint(dm.ID)}>{otherUser.Username}</a>
+                </div>
+            }
+
+        }
+
+    </div>
+
+
+    <div id="dm-ignored">
+
+        {{
+            ignoredDms, _ := db.Query.GetAllDMsWithStatus(ctx, db.GetAllDMsWithStatusParams{
+                Status: "ignored",
+                User1ID: user.ID,
+            }) 
+        }}
+
+        if len(ignoredDms) != 0 {
+            <p>Ignored requests:</p>
+
+            for _, dm := range ignoredDms {
+                <div>
+                    <a href={"/dm/" + fmt.Sprint(dm.ID)}>{}</a>
+                </div>
+            }
+        }
+
+    </div>
+}
+
+
+templ UserPage(user, currentUser db.User) {
+    <!DOCTYPE html>
+
+    <script src="/script/htmx.js" defer></script>
+    <script src="/script/scripts.js" defer></script>
+
+    if user.ID == uuid.Nil {
+        <h3>This user doesnt exists</h3>
+    } else {
+        if user.ID == currentUser.ID {
+            @YourPage(currentUser)
+        } else {
+            @NotYourPage(user, currentUser)
+        }
+    }
+}
+
+
+templ Login(logged bool, logtype string, providers []string) {
+    <!DOCTYPE html>
+    
+    <script src="/script/htmx.js" defer></script>
+
+    if logged {
+        <h1>you are already logged in! you can go to <a href="/">chats</a></h1>
+        <button hx-post="/logoff">log off</button>
+
+    } else {
+        <div id="signup">
+            <form method="POST" action="/signup" accept-charset="utf-8">
+                <input type="text" name="username" />
+                <input type="password" name="password" />
+                <input type="password" id="confirm_password" />
+                <input type="text" name="email" />
+                <button type="submit" value="submit">create account</button>
+            </form>
+        </div>
+
+        <h3>Or signup up with
+            for _, provider := range providers {
+                <a href={"/oauth/signup/" + provider}>{provider}</a>
+                <br />
+            }
+        </h3>
+
+        <h3>If you already have an account, you can log in</h3>
+
+        <div id="login">
+            <form method="POST" action="/login" accept-charset="utf-8">
+                <input type="text" name="username" />
+                <input type="password" name="password" />
+                <button type="submit" value="submit">log in</button>
+            </form>
+        </div>
+    }
+}
+
+
+templ EmailVerificationSend(user db.User) {
+    <!DOCTYPE html>
+
+    <script src="/script/htmx.js" defer></script>
+
+    if user.Verified {
+        <h2>You are already verified!</h2>
+    } else {
+        <h2>Click here to send a verification link to your email</h2>
+
+        <button 
+            hx-post="/email/verification/send" 
+            hx-swap="innerHTML" 
+            hx-target="#status">Send the link
+        </button>
+
+        <h2 id="status"></h2>
+    }
+}
+
+
+templ PasswordResetSend() {
+    <!DOCTYPE html>
+
+    <script src="/script/htmx.js" defer></script>
+
+    <button 
+        hx-post="/password/reset" 
+        hx-swap="innerHTML" 
+        hx-target="#status">Send a password reset link to your email
+    </button>
+
+    <h2 id="status"></h2>
+}
+
+
+templ PasswordForgot(user db.User) {
+    <!DOCTYPE html>
+
+    {{ sentRequest, _ := db.Query.CheckAuthVerification(ctx, user.ID) }}
+
+    if sentRequest {
+        {{
+            passwordVerif, _ := db.Query.GetAuthVerification(ctx, db.GetAuthVerificationParams{
+                UserID: user.ID,
+                Type: types.PASSWORD_NEW,
+            }) 
+        }}
+
+        <form method="POST" action={"/password/new?token=" + passwordVerif.Token} accept-charset="utf-8">
+            <input type="password" name="password" />
+            <input type="password" id="confirm_password" />
+            <button type="submit" value="submit">change password</button>
+        </form>
+
+    } else {
+        <h2>You didnt send a request to reset your password</h2>
+    }
+}
+
+
+templ OauthCreds() {
+    <!DOCTYPE html>
+    
+    <script src="/script/scripts.js" defer></script>
+    <input type="text" id="new-username" placeholder="your username" />
+    <button onclick="changeUsername()">Submit</button>
+}
+
+
+templ UserSettings(user db.User) {
+    <!DOCTYPE html>
+
+    {{ settings, _ := db.Query.GetSettings(ctx, user.ID) }}
+
+    <form method="POST" action="/settings" accept-charset="utf-8">
+        <fieldset>
+            <legend>Socials</legend>
+
+            @Settings(
+                "Accept friend requests from anyone?",
+                types.ACCEPTS_FRIEND_REQS,
+                settings.AcceptsFriendReqs,
+            )
+
+            @Settings(
+                "Accept dm requests from anyone?",
+                types.ACCEPTS_DM_REQS,
+                settings.AcceptsDmReqs,
+            )
+
+        </fieldset>
+
+        <button type="submit">Save settings</button>
+    </form>
+}

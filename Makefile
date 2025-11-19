@@ -1,4 +1,6 @@
 run:
-	templ generate && go run .
-run-del:
-	templ generate && rm -rf sqlite.db && go run .
+	sqlc generate && templ generate && go run .
+run-migrate:
+	sqlc generate && templ generate && go run . migrate
+generate:
+	sqlc generate && templ generate

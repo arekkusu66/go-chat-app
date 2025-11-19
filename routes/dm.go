@@ -1,79 +1,84 @@
 package routes
 
 import (
-	"gochat/models"
+	"gochat/db"
+	"gochat/pages"
 	"gochat/utils"
+	"log"
 	"net/http"
 	"regexp"
-
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
+	"strconv"
 )
 
 
 func DMchatroomH(w http.ResponseWriter, r *http.Request) {
-	userData, err := utils.ParseCookie(r)
+	id, status, err := utils.GetUserID(r)
 
 	if err != nil {
-		http.Error(w, "couldnt retrieve user data", http.StatusInternalServerError)
+		http.Error(w, err.Error(), status)
 		return
 	}
 
-	var user models.User
-	models.DB.Preload(clause.Associations).Preload("DMS.Users").Preload("DMRequests.Users").Preload("IgnoredDMS.Users").Preload("DMS.RequestToUser").First(&user, "id = ?", userData.ID)
+	user, _ := db.Query.GetUserById(r.Context(), id)
 
-	dmchatrooms(user).Render(r.Context(), w)
+	pages.DmChatrooms(user).Render(r.Context(), w)
 }
 
 
 func DMH(w http.ResponseWriter, r *http.Request) {
-	userData, err := utils.ParseCookie(r)
+	userId, status, err := utils.GetUserID(r)
 
 	if err != nil {
-		http.Error(w, "couldnt retrieve user data", http.StatusInternalServerError)
+		http.Error(w, err.Error(), status)
 		return
 	}
 
-	var user models.User
-	models.DB.Preload(clause.Associations).Preload("DMS.Users").First(&user, "id = ?", userData.ID)
+	user, _ := db.Query.GetUserById(r.Context(), userId)
 
-
-	var dm models.DM
 	var id = r.PathValue("id")
 
-	if err := models.DB.Preload(clause.Associations).Preload("Messages.User").First(&dm, id).Error; err != nil && err == gorm.ErrRecordNotFound {
+	if !regexp.MustCompile(`^\d+$`).MatchString(id) {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	intId, _ := strconv.ParseInt(id, 10, 64)
+
+	hasUser, err := db.Query.CheckIfUserIsInDM(r.Context(), db.CheckIfUserIsInDMParams{
+		ID: intId,
+		User1ID: user.ID,
+	})
+
+	if err != nil {
+		log.Println(utils.GetFuncInfo(), err)
+		return
+	}
+
+	if !hasUser {
 		http.Redirect(w, r, "/dms", http.StatusFound)
 		return
 	}
 
+	dm, _ := db.Query.GetDMById(r.Context(), intId) 
 
-	if !dm.HasUser(user) {
-		http.Redirect(w, r, "/dms", http.StatusFound)
-		return
-	}
-
-
-	dmchat(dm, user).Render(r.Context(), w)
+	pages.DmChat(dm, user).Render(r.Context(), w)
 }
 
 
 func DMactionH(w http.ResponseWriter, r *http.Request) {
-	userData, err := utils.ParseCookie(r)
+	userId, status, err := utils.GetUserID(r)
 
 	if err != nil {
-		http.Error(w, "couldnt retrieve user datas", http.StatusInternalServerError)
+		http.Error(w, err.Error(), status)
 		return
 	}
 
-	var user models.User
-	models.DB.Preload(clause.Associations).First(&user, "id = ?", userData.ID)
-
+	user, _ := db.Query.GetUserById(r.Context(), userId)
 	
 	if !user.Verified {
 		http.Error(w, "you need to be verified in order to do that", http.StatusForbidden)
 		return
 	}
-
 
 	var id = r.URL.Query().Get("id")
 
@@ -82,26 +87,44 @@ func DMactionH(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var dm models.DM
-	if err := models.DB.Preload(clause.Associations).First(&dm, id).Error; err != nil && err == gorm.ErrRecordNotFound {
-		http.Error(w, "dm chat not found", http.StatusNotFound)
+	intId, _ := strconv.ParseInt(id, 10, 64)
+
+	hasUser, err := db.Query.CheckIfUserIsInDM(r.Context(), db.CheckIfUserIsInDMParams{
+		ID: intId,
+		User1ID: user.ID,
+	})
+
+	if err != nil {
+		log.Println(utils.GetFuncInfo(), err)
 		return
 	}
 
-	if !dm.HasUser(user) {
+	if !hasUser {
+		http.Error(w, "you are not in this dm", http.StatusNotFound)
 		return
 	}
-
 
 	switch r.URL.Query().Get("type") {
-		case "accept":
-			user.AcceptDM(&dm, w)
-			
-		case "reject":
-			user.IgnoreDM(&dm)
+	case "accept":
+		db.Query.UpdateDM(r.Context(), db.UpdateDMParams{
+			Status: "accepted",
+			ID: intId,
+		})
 
-		default:
-			http.Error(w, "invalid action", http.StatusBadRequest)
-			return
+	case "ignore":
+		db.Query.UpdateDM(r.Context(), db.UpdateDMParams{
+			Status: "ignored",
+			ID: intId,
+		})
+
+	case "unignore":
+		db.Query.UpdateDM(r.Context(), db.UpdateDMParams{
+			Status: "accepted",
+			ID: intId,
+		})
+
+	default:
+		http.Error(w, "invalid action", http.StatusBadRequest)
+		return
 	}
 }

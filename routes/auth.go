@@ -2,9 +2,12 @@ package routes
 
 import (
 	"database/sql"
-	"gochat/models"
+	"fmt"
+	"gochat/db"
+	"gochat/pages"
 	"gochat/types"
 	"gochat/utils"
+	"log"
 	"net/http"
 	"time"
 
@@ -13,9 +16,10 @@ import (
 )
 
 
-func SignUpH(w http.ResponseWriter, r *http.Request) {	
-	var id = uuid.NewString()
+var providers = []string{"google", "discord"}
 
+
+func SignUpH(w http.ResponseWriter, r *http.Request) {	
 	if r.Method == http.MethodPost {
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, "couldnt get the datas from the form", http.StatusInternalServerError)
@@ -25,7 +29,7 @@ func SignUpH(w http.ResponseWriter, r *http.Request) {
 		var (
 			username = r.PostFormValue("username")
 			password = r.PostFormValue("password")
-			email = r.PostFormValue("email")
+			email 	 = r.PostFormValue("email")
 		)
 
 		if !utils.Validate("username", username) {
@@ -42,47 +46,26 @@ func SignUpH(w http.ResponseWriter, r *http.Request) {
 		bytePassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 
 		if err != nil {
-			http.Error(w, "couldnt save the password", http.StatusInternalServerError)
+			http.Error(w, "error saving the datas", http.StatusInternalServerError)
 			return
 		}
-
-
-		var newUser = models.User{
+	
+		var id = uuid.New()
+		
+		if err := db.CreateUser(r.Context(), &db.CreateUserParams{
 			ID: id,
 			Username: username,
-			Password: sql.NullString{String: string(bytePassword), Valid: true},
 			Email: email,
-			Joined: time.Now(),
-			EmailVerification: &models.AuthVerification{
-				UserID: id,
-				Type: types.EMAIL_VERIFY,
-				Token: utils.GenerateToken(),
-				Expiry: time.Now().Add(time.Hour),
-			},
-			Notifications: []models.Notification{
-				{
-					Message: "You have succesfully created your account, but you need to verify your email",
-					Date: time.Now(),
-					Link: "/email/verification/send",
-					Type: types.ACC_VERIFY_NEED,
-					NotifFrom: "app",
-				},
-			},
-			Settings: models.Setting{
-				AcceptsFriendReqs: true,
-				AcceptsDMReqs: true,
-			},
-		}
-
-		if err := models.DB.Create(&newUser).Error; err != nil {
-			http.Error(w, "user already exists!", http.StatusBadRequest)
+			Password: sql.NullString{String: string(bytePassword), Valid: true},
+		}); err != nil {
+			http.Error(w, "error saving the user datas", http.StatusInternalServerError)
 			return
 		}
 
 		jwtToken, err := utils.NewJWT(id)
 
 		if err != nil {
-			http.Error(w, "error creating the token", http.StatusInternalServerError)
+			http.Error(w, "error saving the user datas", http.StatusInternalServerError)
 			return
 		}
 
@@ -99,21 +82,13 @@ func SignUpH(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusFound)
 	}
 	
-	userData, err := utils.ParseCookie(r)
 
-	if err != nil || userData.ID == "" {
-		login(false, "signup").Render(r.Context(), w)
+	if _, _, err := utils.GetUserID(r); err != nil {
+		pages.Login(false, "signup", providers).Render(r.Context(), w)
 		return
 	}
 
-	var user models.User
-
-	if err := models.DB.First(&user, "id = ?", userData.ID).Error; err != nil {
-		login(false, "signup").Render(r.Context(), w)
-		return
-	}
-
-	login(true, "").Render(r.Context(), w)
+	pages.Login(true, "", nil).Render(r.Context(), w)
 }
 
 
@@ -129,13 +104,10 @@ func LoginH(w http.ResponseWriter, r *http.Request) {
 			password = r.PostFormValue("password")
 		)
 
-		var user models.User
-		if err := models.DB.First(&user, "username = ?", username).Error; err != nil {
-			http.Error(w, "user not found", http.StatusNotFound)
-			return
-		}
+		user, _ := db.Query.GetUserByName(r.Context(), username)
 
 		if err := bcrypt.CompareHashAndPassword([]byte(user.Password.String), []byte(password)); err != nil {
+
 			http.Error(w, "wrong password", http.StatusBadRequest)
 			return
 
@@ -144,7 +116,7 @@ func LoginH(w http.ResponseWriter, r *http.Request) {
 			jwtToken, err := utils.NewJWT(user.ID)
 
 			if err != nil {
-				http.Error(w, "error creating the token", http.StatusInternalServerError)
+				http.Error(w, "couldnt save the user datas", http.StatusInternalServerError)
 				return
 			}
 
@@ -161,22 +133,13 @@ func LoginH(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "/", http.StatusFound)
 		}
 	}
-	
 
-	userData, err := utils.ParseCookie(r)
-
-	if err != nil || userData.ID == "" {
-		login(false, "login").Render(r.Context(), w)
+	if _, _, err := utils.GetUserID(r); err != nil {
+		pages.Login(false, "login", providers).Render(r.Context(), w)
 		return
 	}
 
-	var user models.User
-	if err := models.DB.First(&user, "id = ?", userData.ID).Error; err != nil {
-		login(false, "login").Render(r.Context(), w)
-		return
-	}
-
-	login(true, "").Render(r.Context(), w)
+	pages.Login(true, "", nil).Render(r.Context(), w)
 }
 
 
@@ -196,172 +159,180 @@ func LogOffH(w http.ResponseWriter, r *http.Request) {
 
 
 func EmailVerificationSendH(w http.ResponseWriter, r *http.Request) {
-	userData, err := utils.ParseCookie(r)
+	id, status, err := utils.GetUserID(r)
 
 	if err != nil {
-		http.Error(w, "couldnt retrieve user data", http.StatusInternalServerError)
+		http.Error(w, err.Error(), status)
 		return
 	}
 
-	var user models.User
-	models.DB.Preload("EmailVerification").First(&user, "id = ?", userData.ID)
-
+	user, _ := db.Query.GetUserById(r.Context(), id)
 	
 	if r.Method == http.MethodPost {
 		if user.Verified {
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte("you are already verified!"))
+			http.Error(w, "you are already verified!", http.StatusBadRequest)
 			return
 		}
 
+		var token = utils.GenerateToken()
 
-		if r.URL.Query().Get("send-new") == "true" {
-			models.DB.Where("user_id = ? AND type = ?", user.ID, types.EMAIL_VERIFY).Delete(&models.AuthVerification{})
-			models.DB.Model(&user).Association("EmailVerification").Append(&models.AuthVerification{
-				UserID: user.ID,
-				Type: types.EMAIL_VERIFY,
-				Token: utils.GenerateToken(),
-				Expiry: time.Now().Add(time.Hour),
-			})
-		}
+		db.Query.DeleteAuthVerification(r.Context(), db.DeleteAuthVerificationParams{
+			UserID: user.ID,
+			Type: types.EMAIL_VERIFICATION,
+		})
 
+		db.Query.CreateAuthVerification(r.Context(), db.CreateAuthVerificationParams{
+			UserID: user.ID,
+			Type: types.EMAIL_VERIFICATION,
+			Token: token,
+			Expiry: time.Now().Add(time.Hour),
+		})
 
-		if err := utils.SendVerificationEmail(user, types.EMAIL_VERIFY, r.Host); err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte("couldnt send the email"))
+		if err := utils.SendVerificationEmail(types.EMAIL_VERIFICATION, token, user.Email, r.Host); err != nil {
+			log.Println(utils.GetFuncInfo(), err)
+			http.Error(w, "couldnt send the email", http.StatusInternalServerError)
 			return
 		} else {
-			w.Write([]byte("email sent"))
+			fmt.Fprint(w, "email sent")
 			return
 		}
 	}
 	
 
-	email_verification_send(user).Render(r.Context(), w)
+	pages.EmailVerificationSend(user).Render(r.Context(), w)
 }
 
 
 func EmailVerificationH(w http.ResponseWriter, r *http.Request) {
-	userData, err := utils.ParseCookie(r)
+	id, status, err := utils.GetUserID(r)
 
 	if err != nil {
-		http.Error(w, "couldnt retrieve user data", http.StatusInternalServerError)
+		http.Error(w, err.Error(), status)
 		return
 	}
 
-	var user models.User
-	models.DB.Preload("EmailVerification").First(&user, "id = ?", userData.ID)
-
+	user, _ := db.Query.GetUserById(r.Context(), id)
 
 	if user.Verified {
-		w.Write([]byte("You are already verified!"))
+		fmt.Fprint(w, "you are already verified")
 		return
 	}
 
-	if time.Now().After(user.EmailVerification.Expiry) {
+	emailVerif, err := db.Query.GetAuthVerification(r.Context(), db.GetAuthVerificationParams{
+		UserID: user.ID,
+		Type: types.EMAIL_VERIFICATION,
+	})
+
+	if err != nil {
+		http.Error(w, "couldnt get the email verification datas", http.StatusInternalServerError)
+		return
+	}
+
+	if time.Now().After(emailVerif.Expiry) {
 		http.Error(w, "your token expired!", http.StatusBadRequest)
 		return
 	}
 
-
 	var token = r.URL.Query().Get("token")
 
-	if token != user.EmailVerification.Token {
+	if token != emailVerif.Token {
 
 		http.Error(w, "this isnt the right token!", http.StatusBadRequest)
 		return
 
 	} else {
+		db.Query.UpdateUser(r.Context(), db.UpdateUserParams{ID: user.ID, Verified: true})
 
-		user.Verified = true
-		user.Notifications = []models.Notification{
-			{
-				Message: "Your account has been verified",
-				Date: time.Now(),
-				Link: "/",
-				Type: types.ACC_VERIFIED,
-				NotifFrom: "app",
-			},
-		}
-		models.DB.Save(&user)
+		db.Query.CreateNotification(r.Context(), db.CreateNotificationParams{
+			UserID: user.ID,
+			NotifFrom: "app",
+			Message: "Your account has been verified",
+			Link: "/",
+			Type: string(types.ACC_VERIFIED),
+		})
 
-		models.DB.Where("user_id = ? AND type = ?", user.ID, types.EMAIL_VERIFY).Delete(&models.AuthVerification{})
-		models.DB.Where("user_id = ? AND notif_from = ? AND type = ?", user.ID, "app", types.ACC_VERIFY_NEED).Delete(&models.Notification{})
+		db.Query.DeleteAuthVerification(r.Context(), db.DeleteAuthVerificationParams{
+			UserID: user.ID,
+			Type: types.EMAIL_VERIFICATION,
+		})
+
+		db.Query.DeleteAllNotificationsByType(r.Context(), db.DeleteAllNotificationsByTypeParams{
+			UserID: user.ID,
+			Type: string(types.ACC_VERIFY_NEED),
+		})
 	}
 }
 
 
 func PasswordResetH(w http.ResponseWriter, r *http.Request) {
-	userData, err := utils.ParseCookie(r)
+	id, status, err := utils.GetUserID(r)
 
 	if err != nil {
-		http.Error(w, "couldnt retrieve user data", http.StatusInternalServerError)
+		http.Error(w, err.Error(), status)
 		return
 	}
 
-	var user models.User
-	models.DB.Preload("PasswordVerification").First(&user, "id = ?", userData.ID)
-
+	user, _ := db.Query.GetUserById(r.Context(), id)
 
 	if r.Method == http.MethodPost {
-		user.PasswordVerification = &models.AuthVerification{
+		var token = utils.GenerateToken()
+
+		db.Query.CreateAuthVerification(r.Context(), db.CreateAuthVerificationParams{
 			UserID: user.ID,
 			Type: types.PASSWORD_RESET,
-			Token: utils.GenerateToken(),
+			Token: token,
 			Expiry: time.Now().Add(time.Hour),
-		}
+		})
 	
-		models.DB.Save(&user)
-	
-		if err := utils.SendVerificationEmail(user, types.PASSWORD_RESET, r.Host); err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte("couldnt send the email"))
+		if err := utils.SendVerificationEmail(types.PASSWORD_RESET, token, user.Email, r.Host); err != nil {
+			http.Error(w, "couldnt send the verification email", http.StatusInternalServerError)
 			return
 		} else {
-			w.Write([]byte("email sent"))
+			fmt.Fprint(w, "verification email sent")
 			return
 		}
 	}
 
-
-	password_reset_send().Render(r.Context(), w)
+	
+	pages.PasswordResetSend().Render(r.Context(), w)
 }
 
 
 func PasswordNewH(w http.ResponseWriter, r *http.Request) {
-	userData, err := utils.ParseCookie(r)
+	id, status, err := utils.GetUserID(r)
 
 	if err != nil {
-		http.Error(w, "couldnt retrieve user data", http.StatusInternalServerError)
+		http.Error(w, err.Error(), status)
 		return
 	}
 
-	var user models.User
-	models.DB.Preload("PasswordVerification").First(&user, "id = ?", userData.ID)
-
+	user, _ := db.Query.GetUserById(r.Context(), id)
 
 	if r.Method == http.MethodPost {
 
 		r.ParseForm()
 
+		passwordVerif, err := db.Query.GetAuthVerification(r.Context(), db.GetAuthVerificationParams{
+			UserID: id,
+			Type: types.PASSWORD_NEW,
+		})
 
-		if user.PasswordVerification == nil {
+		if err != nil {
 			http.Error(w, "you didnt send a request to reset your password", http.StatusBadRequest)
 			return
 		}
 
-		if time.Now().After(user.PasswordVerification.Expiry) {
+		if time.Now().After(passwordVerif.Expiry) {
 			http.Error(w, "the token expired!", http.StatusBadRequest)
 			return
 		}
 
 		var token = r.URL.Query().Get("token")
 
-		if token != user.PasswordVerification.Token {
+		if token != passwordVerif.Token {
 			http.Error(w, "this isnt the right token!", http.StatusBadRequest)
 			return
 		}
-
 
 		var password = r.PostFormValue("password")
 	
@@ -373,16 +344,18 @@ func PasswordNewH(w http.ResponseWriter, r *http.Request) {
 		bytePassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	
 		if err != nil {
-			http.Error(w, "couldnt save your password", http.StatusInternalServerError)
+			http.Error(w, "couldnt save the user datas", http.StatusInternalServerError)
 			return
 		}
-	
-		user.Password = sql.NullString{String: string(bytePassword), Valid: true}
-		models.DB.Save(&user)
 
-		models.DB.Where("user_id = ? AND type = ?", user.ID, types.PASSWORD_RESET).Delete(&models.AuthVerification{})
+		db.Query.UpdateUser(r.Context(), db.UpdateUserParams{ID: user.ID, Password: string(bytePassword)})
+
+		db.Query.DeleteAuthVerification(r.Context(), db.DeleteAuthVerificationParams{
+			UserID: user.ID,
+			Type: types.PASSWORD_NEW,
+		})
 	}
 
 
-	password_forgot(user).Render(r.Context(), w)
+	pages.PasswordForgot(user).Render(r.Context(), w)
 }

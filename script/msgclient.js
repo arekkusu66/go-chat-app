@@ -1,5 +1,7 @@
-const msg_url = new URL(window.location.href);
-const id = msg_url.pathname.match(/\/chat\/(\d+)/)[1];
+const msgurl = new URL(window.location.href);
+const path = msgurl.pathname.match(/\/(chat|dm)\/(\d+)/);
+const type = path[1];
+const id = path[2];
 
 const wsurl = `ws://${window.location.host}/msg/ws/` + id;
 const msgws = new WebSocket(wsurl);
@@ -27,7 +29,7 @@ msgws.onmessage = (e) => {
             document.querySelector(`#message-c-${message.data.id}`).remove();
 
             Array.from(document.querySelectorAll(`#reply-${message.data.id}`))
-                .forEach(e => e.innerHTML = `<div><i style="color:red">Reply to deleted message</i></div>`);
+                .forEach(e => e.innerHTML = `<div><i style="color:red">Reply to a deleted message</i></div>`);
             
             break;
 
@@ -39,46 +41,81 @@ msgws.onmessage = (e) => {
 
 function sendMsg() {
     const message = document.querySelector('#send');
-    const replyId = document.querySelector('#id-reply');
+    const reply_id = document.querySelector('#id-reply');
 
-    const id = msg_url.pathname.match(/\/chat\/(\d+)/)[1];
+    if (message.value === '') {
+        return;
+    };
     
-    let datas = {
+    let msg = {
         type: 'MSG',
         data: {
             text: message.value,
-            chatRoomId: parseInt(id),
-            replyId: parseInt(replyId.textContent),
-            replyStatus: 'not_deleted',
+            reply_status: 'no_reply',
         },
     };
 
-    msgws.send(JSON.stringify(datas));
+    msg.data.reply_id = reply_id.textContent != '' ? 
+        {Int64: parseInt(reply_id.textContent), Valid: true} : null;
+
+    switch (type) {
+        case 'chat':
+            msg.data.chatroom_id = {Int64: parseInt(id), Valid: true};
+            break;
+        case 'dm':
+            msg.data.dm_id = {Int64: parseInt(id), Valid: true};
+            break;
+        default:
+            break;
+    };
+
+    msgws.send(JSON.stringify(msg));
 
     message.value = '';
-    replyId.textContent = '';
+    reply_id.textContent = '';
 };
 
 
 async function addMessage(message) {
-    const messageDatasResponse = await fetch(`/get/datas?id=${message.id}`, {
+    const resExtraDatas = await fetch(`/get/message?type=0&id=${message.id}`, {
         method: 'POST'
     });
 
-    const messageDatas = await messageDatasResponse.json();
+    const extraDatas = await resExtraDatas.json();
 
-    const chatOP = `<h5 style="color:${message.userId === message.chatOp.String ? 'blue' : 'rgb(177, 6, 6)'}">${message.user.username}${message.userId === message.chatOp.String ? ' - OP' : ''}</h5>`;
+    let chatordm = message.chatroom_id.Valid ? 
+    
+        (`style="color:${message.user_id === message.creator_id ? 'blue' : 'rgb(177, 6, 6)'}">
+        ${message.username}${message.user_id === message.creator_id ? ' - OP' : ''}`) :
+        
+        (`style="color:rgb(177, 6, 6)">
+        ${message.username}`);
 
-    const getOptions = `<div><button data-message-id="${message.id}" id="options-get-${message.id}">options</button></div>`;
+    const userDatas = `
+        <h5 ${chatordm} </h5>`;
+
+    const getOptions = `
+        <div>
+            <button data-message-id="${message.id}" id="options-get-${message.id}">options</button>
+        </div>`;
+
     const options = `<div id="options-${message.id}" class="msg-options"></div>`;
 
-    const replies = `${message.replyId !== 0 && message.reply ? (`<div id="reply-${message.replyId}"><a href="#message-${message.replyId}">reply to ${message.reply.text}</a></div>`) : ''}`;
+    const replies = `
+        ${(message.reply_id.Valid && message.reply_text.Valid) ? 
+            `<div id="reply-${message.reply_id.Int64}">
+                <a href="#message-${message.reply_id.Int64}">reply to ${message.reply_text.String}</a>
+            </div>` : ''}`;
 
-    const msgDatas = `<h3 id="message-${message.id}"></h3><i>at ${formatDate(message.date)}</i><hr />`;
+    const msgDatas = `
+        <h3 id="message-${message.id}">${message.text}</h3>
+        <i>at ${formatDate(message.date)}</i><hr />`;
 
     let notBlocked = `
-        <div ${messageDatas.isReply ? `style="background-color:rgba(238, 238, 0, 0.5)"` : ''} id="message-c-${message.id}">
-            ${chatOP}
+        <div 
+            ${extraDatas.is_reply ? `style="background-color:rgba(255, 255, 0, 0.5)"` : ''}
+            id="message-c-${message.id}">
+            ${userDatas}
             ${getOptions}
             ${options}
             ${replies}
@@ -88,14 +125,17 @@ async function addMessage(message) {
 
     let blocked = `
         <div id="message-c-${message.id}">
-            <p>Message from a blocked user<button onclick="showMessage(this)" data-id="${message.id}">Show</button></p>
+            <p>Message from a blocked user
+                <button onclick="showMessage(this)" data-id="${message.id}">Show</button>
+            </p>
         </div>
     `;
 
-    document.querySelector('#messages').innerHTML += messageDatas.isBlocked ? blocked : notBlocked;
+    document.querySelector('#messages').innerHTML += extraDatas.is_blocked ? blocked : notBlocked;
 
-
-    document.querySelector(`#message-${message.id}`).textContent = message.text;
+    if (!extraDatas.is_blocked) {
+        document.querySelector(`#message-${message.id}`).textContent = message.text;
+    };
 
     
     document.querySelector('#messages').addEventListener('click', async (event) => {
@@ -117,8 +157,21 @@ async function addMessage(message) {
 function deleteMsg(button) {
     const btnID = button.dataset.id;
 
-    msgws.send(JSON.stringify({
+    let msg = {
         type: 'DEL',
-        data: {chatRoomId: parseInt(id), id: parseInt(btnID)},
-    }));
+        data: {id: parseInt(btnID)},
+    };
+
+    switch (type) {
+        case 'chat':
+            msg.data.chatroom_id = {Int64: parseInt(id), Valid: true};
+            break;
+        case 'dm':
+            msg.data.dm_id = {Int64: parseInt(id), Valid: true};
+            break;
+        default:
+            break;
+    };
+
+    msgws.send(JSON.stringify(msg));
 };

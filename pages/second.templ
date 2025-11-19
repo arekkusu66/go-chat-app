@@ -1,0 +1,488 @@
+package pages
+
+import (
+    "gochat/db"
+	"gochat/types"
+    "fmt"
+)
+
+
+css Mentioned() {
+    background-color: rgba(238, 238, 0, 0.5);
+}
+
+
+templ YourPage(user db.User) {
+    @UserNotifications(ctx, user)
+
+    if !user.Verified {
+        <h2>You need yo verify your account <a href="/email/verification/send">here</a></h2>
+    }
+    
+    <h1>hello {user.Username}</h1>
+    <h2>ID: <b>{user.ID.String()}</b></h2>
+
+    <input type="text" id="new-username" placeholder="new username" />
+    <button onclick="changeUsername()">change your username</button>
+
+    <h2 id="description">
+        if user.Description.Valid {
+            {user.Description.String}
+        }
+    </h2>
+
+    <textarea placeholder="your description" id="write-description" style="width:300px;height:150px"></textarea>
+    <button onclick="editDescription()">change your description</button>
+
+    <h3>Member since {user.JoinDate.Format("02.01.2006")}</h3>
+
+
+    <div id="friends">
+        <h2>Your friends:</h2>
+
+        {{ 
+            friends, _ := db.Query.GetAllRelations(ctx, db.GetAllRelationsParams{
+                UserID: user.ID,
+                Type: types.FRIEND,
+            }) 
+        }}
+
+        if len(friends) != 0 {
+            for _, friend := range friends {
+                <p>
+                    <a href={"/user/" + friend.Username}>{friend.Username}</a>
+                </p>
+            }
+        } else {
+            <p>You have no friends yet</p>
+        }
+    </div>
+
+
+    <div id={types.RECEIVED_FRIEND_REQ}>
+        <h2>Received friend requests:</h2>
+
+        {{
+            receivedRequests, _ := db.Query.GetAllRelations(ctx, db.GetAllRelationsParams{
+                UserID: user.ID,
+                Type: types.RECEIVED_FRIEND_REQ,
+            })
+        }}
+
+        if len(receivedRequests) != 0 {
+            for _, receivedReq := range receivedRequests {
+
+                <div id={"received-" + receivedReq.Username}>
+                    <p>
+                        <a href={"/user/" + receivedReq.Username}>{receivedReq.Username}</a>
+                    </p>
+
+                    <button
+                        hx-post={"/user/actions?type=accept&username=" + receivedReq.Username}
+                        hx-target={"#received-" + receivedReq.Username}                       
+                        hx-swap="delete"                       
+                        data-type="accepted_friend_request"                     
+                        data-target={receivedReq.Username}                   
+                        onclick="sendNotif(this)"                        
+                        style="color:lime">accept
+                    </button>
+
+                    <button 
+                        hx-post={"/user/actions?type=ignore&username=" + receivedReq.Username}                        
+                        hx-target={"#received-" + receivedReq.Username}                     
+                        hx-swap="delete"                       
+                        style="color:red">ignore
+                    </button>
+                </div>
+            }
+        }
+
+    </div>
+
+
+    <div id={types.SENT_FRIEND_REQ}s>
+        <h2>Sent friend requests:</h2>
+
+        {{ 
+            sentFriendRequests, _ := db.Query.GetAllRelations(ctx, db.GetAllRelationsParams{
+                UserID: user.ID,
+                Type: types.SENT_FRIEND_REQ,
+            })
+         }}
+
+        if len(sentFriendRequests) != 0 {
+            for _, sentReq := range sentFriendRequests {
+
+                <div id={"sent" + sentReq.Username}>
+                    <p>
+                        <a href={"/user/" + sentReq.Username}>{sentReq.Username}</a>
+                    </p>
+
+                    <button 
+                        hx-post={"/user/actions?type=cancel&username=" + sentReq.Username}
+                        hx-target={"#sent" + sentReq.Username}
+                        hx-swap="delete">cancel
+                    </button>
+                </div>
+            }
+        }
+
+    </div>
+
+
+    <div id={types.BLOCKED_USER}>
+        <h2>Blocked users:</h2>
+
+        {{ 
+            blockedUsers, _ := db.Query.GetAllRelations(ctx, db.GetAllRelationsParams{
+                UserID: user.ID,
+                Type: types.BLOCKED_USER,
+            })
+         }}
+
+        if len(blockedUsers) != 0 {
+            for _, blockedUser := range blockedUsers {
+
+                <div id={"blocked-" + blockedUser.Username}>
+                    
+                    <p>
+                        <a href={"/user/" + blockedUser.Username}>{blockedUser.Username}</a>
+                    </p>
+
+                    <button 
+                        hx-post={"/user/actions?type=unblock&username=" + blockedUser.Username}      
+                        hx-target={"#blocked-" + blockedUser.Username}  
+                        hx-swap="delete">unblock
+                    </button>
+                
+                </div>
+            }
+        }
+
+    </div>
+}
+
+
+templ NotYourPage(user, currentUser db.User) {
+    @UserNotifications(ctx, currentUser)
+
+    <h1>This is <b>{user.Username}</b>'s page</h1>
+    <h2>ID: <b>{user.ID.String()}</b></h2>
+
+    if user.Description.Valid {
+        <h2>{user.Description.String}</h2>
+    }
+
+    <h2>Member since {user.JoinDate.Format("02.01.2006")}</h2>
+
+    if currentUser.CheckUserRelation(ctx, types.BLOCKED_USER, user.ID) {
+        
+        <div id={types.BLOCKED_USER}>
+            <h3>You blocked {user.Username}</h3>
+                
+            <button 
+                hx-post={"/user/actions?type=unblock&username=" + user.Username} 
+                hx-target={"#" + types.BLOCKED_USER} 
+                hx-swap="outerHTML">unblock
+            </button>
+        </div>
+
+    } else {
+        switch true {
+            case currentUser.CheckUserRelation(ctx, types.SENT_FRIEND_REQ, user.ID):
+
+                <div id={types.SENT_FRIEND_REQ}>
+                    <h3>Friend request sent to {user.Username}</h3>
+
+                    <button 
+                        hx-post={"/user/actions?type=cancel&username=" + user.Username} 
+                        hx-target={"#" + types.SENT_FRIEND_REQ} 
+                        hx-swap="outerHTML">cancel
+                    </button>
+                </div>
+
+
+            case currentUser.CheckUserRelation(ctx, types.RECEIVED_FRIEND_REQ, user.ID):
+
+                <div id={types.RECEIVED_FRIEND_REQ}>
+                    <h3>{user.Username} sent you a friend request</h3>
+
+                    <button 
+                        hx-post={"/user/actions?type=accept&username=" + user.Username}   
+                        hx-target={"#" + types.RECEIVED_FRIEND_REQ}
+                        hx-swap="outerHTML"
+                        style="color:lime">accept
+                    </button>
+                    
+                    <button 
+                        hx-post={"/user/actions?type=ignore&username=" + user.Username}         
+                        hx-target={"#" + types.RECEIVED_FRIEND_REQ}          
+                        hx-swap="outerHTML" 
+                        style="color:red">ignore
+                    </button>
+                </div>
+
+
+            case currentUser.CheckUserRelation(ctx, types.FRIEND, user.ID):
+
+                <div id="friends">
+                    <h3>You are friend with {user.Username}</h3>
+
+                    <button 
+                        hx-post={"/user/actions?type=block&username=" + user.Username}
+                        hx-target="#friends"
+                        hx-swap="outerHTML">block user
+                    </button>
+                </div>
+
+            default:
+
+                <div id="user-actions">                
+                    <button 
+                        hx-post={"/user/actions?type=add&username=" + user.Username}                        
+                        hx-target="#user-actions"                         
+                        hx-swap="outerHTML" 
+                        onclick="sendNotif(this)"                        
+                        data-type="friend_req"                        
+                        data-target={user.ID.String()}>send a friend request to {user.Username}
+                    </button>
+
+                    <button 
+                        hx-post={"/user/actions?type=block&username=" + user.Username}                        
+                        hx-target="#user-actions" 
+                        hx-swap="outerHTML">block user
+                    </button>
+                </div>
+        }
+    }
+
+
+    if !currentUser.CheckUserRelation(ctx, types.BLOCKED_USER, user.ID) {
+        <div>
+
+        {{
+            hasDMed, _ := db.Query.CheckIfUserDMedUser(ctx, db.CheckIfUserDMedUserParams{
+                User1ID: user.ID,
+                User2ID: currentUser.ID,
+            })
+        }}
+
+        if hasDMed {
+            {{
+                dm, _ := db.Query.GetDMWithBothUsers(ctx, db.GetDMWithBothUsersParams{
+                    User1ID: user.ID,
+                    User2ID: currentUser.ID,
+                })
+            }}
+
+            <a href={"/dm/" + fmt.Sprint(dm.ID)}>Message {user.Username}</a>
+
+        } else {
+
+            <button 
+                hx-post={"/user/actions?type=senddm&username=" + user.Username}                    
+                hx-swap="none"
+                onclick="sendNotif(this)"                   
+                data-type="dm_req" 
+                data-target={user.ID.String()}>Send a message to {user.Username}
+            </button>
+
+        }
+
+        </div>
+
+    }
+}
+
+
+templ UserChatrooms(chatType []db.Chatroom, chatTypeName, noChatMsg string, createdByUser bool) {
+    <h1>{chatTypeName}</h1>
+
+        if len(chatType) == 0 {
+            <h3>{noChatMsg}</h3>
+        } else {
+            <ul>
+                for _, chatroom := range chatType {
+                    if createdByUser {
+                        <li>
+                            <a href={ templ.URL(fmt.Sprintf("/chat/%d", chatroom.ID)) }>{chatroom.Title}</a>
+                        </li>
+                    } else {
+                        {{ creator, _ := db.Query.GetCreator(ctx, chatroom.ID) }}
+
+                        <li>
+                            <a href={"/chat/" + fmt.Sprint(chatroom.ID) }>{chatroom.Title}</a> 
+                            <p>by {creator.Username}></p>
+                        </li>
+                    }
+                }
+            </ul>
+        }
+}
+
+
+templ MessageUser(message db.GetFullMessageDatasRow, currentUser db.User) {
+    {{
+        isBlocked, _ := db.Query.CheckMessageUserRelation(ctx, db.CheckMessageUserRelationParams{
+            ID: message.ID,
+            UserID: currentUser.ID,
+            Type: types.BLOCKED_USER,
+        })
+    }}
+
+    if isBlocked {
+
+        <div id={"message-c-" + fmt.Sprint(message.ID)}>
+            <p>
+                Message from a blocked user
+                <button onclick="showMessage(this)" data-id={fmt.Sprint(message.ID)}>Show</button>
+            </p>
+        </div>
+
+    } else {
+        <div
+            class={templ.KV(Mentioned(), message.ReplyUserID.UUID == currentUser.ID)}
+            id={"message-c-" + fmt.Sprint(message.ID)}>
+
+        if message.ChatroomID.Valid {
+            if message.UserID == message.CreatorID.UUID {
+                <h5 style="color:blue">{message.Username} - OP</h5>
+            } else {
+                <h5 style="color:rgb(176, 6, 6)">{message.Username}</h5>
+            }
+        } else {
+            <h5 style="color:green">{message.Username}</h5>
+        }
+
+
+        <div><button onclick="getOptions(this)" data-id={fmt.Sprint(message.ID)}>options</button></div>
+        <div id={"options-" + fmt.Sprint(message.ID)} class="msg-options"></div>
+
+        if message.ReplyStatus == "deleted" {
+            <div><i style="color:red">Reply to a deleted message</i></div>
+        }
+
+        if message.ReplyID.Valid {
+            <div id={"reply-" + fmt.Sprint(message.ReplyID.Int64)} class="replies">
+                <a 
+                    href={"#message-" + fmt.Sprint(message.ReplyID.Int64)}>reply to {message.ReplyText.String}
+                </a>    
+            </div>
+        }
+
+        <h3 id={"message-" + fmt.Sprint(message.ID)}>{message.Text}</h3>
+        <i>at {message.Date.Format("02.01.2006 15:04")}</i>
+        <hr />
+
+        </div>
+    }
+}
+
+
+templ AlreadyJoined(chatroom db.Chatroom, user db.User) {
+    if !user.Verified {
+
+        <h2>
+            Your account is not verified yet, you may want to verify it 
+            <a href={"/email/verification/send"}>here</a>
+        </h2>
+
+    } else {
+        
+        <div id="already-joined">
+
+            if user.ID != chatroom.CreatorID {
+                <button 
+                    hx-post={"/leave/chat/" + fmt.Sprint(chatroom.ID)} 
+                    hx-target="#already-joined">leave this chat
+                </button>
+                
+                <hr />
+            }
+
+            <div id="reply">
+                <div id="id-reply"></div>
+            </div>
+
+            <br />
+            <br />
+            <input type="text" id="send" placeholder="write a message" style="width:300px;height:30px" />
+            <button onclick="sendMsg()" style="width:60px;height:35px">send</button>
+
+        </div>
+    }
+}
+
+
+templ NotJoined(chatroom db.Chatroom, user db.User) {
+    if user.Verified {
+        <div id="not-joined">
+
+            <h3>join this chat!</h3>
+            <button 
+                hx-post={"/chat/actions?action=join&id=" + fmt.Sprint(chatroom.ID)} 
+                hx-target="#not-joined">click to join
+            </button>
+
+        </div>
+    } else {
+        <h2>
+            Your account is not verified yet, go 
+            <a href={"/email/verification/send"}>here</a> to verify it
+        </h2>
+    }
+}
+
+
+templ DmAccepted() {
+    <div id={types.ACCEPTED_DM}>
+
+        <div id="reply">
+            <div id="id-reply"></div>
+        </div>
+
+        <br />
+        <br />
+        <input type="text" id="send" placeholder="write a message" style="width:300px;height:30px" />
+        <button onclick="sendMsg()" style="width:60px;height:35px">send</button>
+
+    </div>
+}
+
+
+templ DmNotAccepted(dm db.Dm) {
+    <div id="dm-not-accepted">
+
+        <button 
+            hx-post={"/dm/action?type=accept&id=" + fmt.Sprint(dm.ID)} 
+            hx-target="#dm-not-accepted" 
+            style="color:lime">accept
+        </button>
+
+        <button 
+            hx-post={"/dm/action?type=reject&id=" + fmt.Sprint(dm.ID)} 
+            hx-target="#dm-not-accepted" 
+            style="color:red">ignore
+        </button>
+
+    </div>
+}
+
+
+templ Settings(settingQuestion string, name types.Setting, checked bool) {
+    <div>
+        <h3>{settingQuestion}</h3>
+
+        {{ yesID, noID := string(name) + "-yes", string(name) + "-no" }}
+
+        <div>
+            <input type="radio" id={yesID} name={name} value="yes" checked?={checked} />
+            <label for={yesID}>Yes</label>
+        </div>
+
+        <div>
+            <input type="radio" id={noID} name={name} value="no" checked?={!checked} />
+            <label for={noID}>No</label>
+        </div>
+    </div>
+}

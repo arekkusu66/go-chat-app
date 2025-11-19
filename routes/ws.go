@@ -1,9 +1,10 @@
 package routes
 
 import (
-	"database/sql"
+	"context"
 	"encoding/json"
 	"fmt"
+	"gochat/db"
 	"gochat/models"
 	"gochat/types"
 	"gochat/utils"
@@ -12,7 +13,6 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"gorm.io/gorm/clause"
 )
 
 
@@ -31,19 +31,19 @@ type client struct {
 	conn			*websocket.Conn
 	outgoing 		chan *outgoing
 
-	Type			string
+	Type			types.WSMessage
 	id				string
 }
 
 
 type incoming struct {
-	Type			string				`json:"type"`
+	Type			types.WSMessage		`json:"type"`
 	Data			json.RawMessage		`json:"data"`
 }
 
 
 type outgoing struct {
-	Type			string				`json:"type"`
+	Type			types.WSMessage		`json:"type"`
 	Data			any					`json:"data"`	
 }
 
@@ -129,14 +129,32 @@ func (hub *Hub) Run() {
 				}
 
 			case outgoing := <-hub.outgoing:
-					switch outgoing.Type {
-						case types.MSG, types.DEL:
-							var message = outgoing.Data.(*models.Message)
-							sendOutgoing(hub, outgoing, hub.rooms, fmt.Sprint(message.ChatRoomID))
+				switch outgoing.Type {
+					case types.MSG:
+						var message = outgoing.Data.(*models.MessageDatas)
 
-						case types.NOTIF:
-							var notif = outgoing.Data.(*models.Notification)
-							sendOutgoing(hub, outgoing, hub.notifs, notif.UserID)
+						if message.ChatroomID.Valid {
+							sendOutgoing(hub, outgoing, hub.rooms, 
+								fmt.Sprint(message.GetFullMessageDatasRow.ChatroomID.Int64))
+						} else {
+							sendOutgoing(hub, outgoing, hub.rooms, 
+								fmt.Sprint(message.GetFullMessageDatasRow.DmID.Int64))
+						}
+
+					case types.DEL:
+						var message = outgoing.Data.(*db.Message)
+
+						if message.ChatroomID.Valid {
+							sendOutgoing(hub, outgoing, hub.rooms, 
+								fmt.Sprint(message.ChatroomID.Int64))
+						} else {
+							sendOutgoing(hub, outgoing, hub.rooms, 
+								fmt.Sprint(message.DmID.Int64))
+						}
+
+					case types.NOTIF:
+						var notif = outgoing.Data.(*db.CreateNotificationParams)
+						sendOutgoing(hub, outgoing, hub.notifs, notif.UserID.String())
 					}
 		}
 	}
@@ -161,130 +179,113 @@ func (c *client) readPump(r *http.Request) {
 			break
 		}
 
-		userData, err := utils.ParseCookie(r)
+		userId, _, err := utils.GetUserID(r)
 
 		if err != nil {
-			log.Println("could get the user datas: ", err)
-			return
+			log.Println(utils.GetFuncInfo(), err)
+			continue
 		}
 
-		var user models.User
-		
-		if err := models.DB.Preload(clause.Associations).First(&user, "id = ?", userData.ID).Error; err != nil {
-			log.Println("error finding the user: ", err)
+		user, err := db.Query.GetUserById(context.Background(), userId)
+
+		if err != nil {
+			log.Println(utils.GetFuncInfo(), err)
 			continue
 		}
 
 		switch incoming.Type {
 			case types.MSG:
-				var message = &models.Message{
-					Date: time.Now(),
-					User: user,
+				// fmt.Println("incoming msg", string(incoming.Data))
+				
+				var message  = &db.CreateMessageParams{
 					UserID: user.ID,
 				}
-
-				var reply models.Message
-
-				if err := json.Unmarshal(incoming.Data, message); err != nil {
-					log.Println("invalid message: ", err)
-					continue
-				}
-
-				if message.ReplyID != 0 {
-					if models.DB.First(&reply, message.ReplyID).Error == nil {
-						message.Reply = &reply
-					}
-				}
-
-				if message.ChatRoomID == 0 {
-					var chatroom models.ChatRoom
-					if err := models.DB.First(&chatroom, message.ChatRoomID).Error; err != nil {
-						log.Println("error finding the message: ", err)
-						continue
-					}
-					message.ChatOp = sql.NullString{String: chatroom.CreatedBy, Valid: true}
-				}
-
-				models.DB.Create(&message)
-
-				c.hub.outgoing <- &outgoing{Type: types.MSG, Data: message}
-
-
-			case types.DEL:
-				var message models.Message
 
 				if err := json.Unmarshal(incoming.Data, &message); err != nil {
 					log.Println("invalid message: ", err)
 					continue
 				}
 
-				id, roomID := message.ID, message.ChatRoomID
+				id, err := db.Query.CreateMessage(context.Background(), *message)
 
-				if err := models.DB.Delete(&message).Error; err != nil {
-					log.Println(err)
+				if err != nil {
+					log.Println(utils.GetFuncInfo(), err)
 					continue
 				}
+
+				messageDatas, err := db.Query.GetFullMessageDatas(context.Background(), id)
+
+				if err != nil {
+					log.Println(utils.GetFuncInfo(), err)
+					continue
+				}
+
+				c.hub.outgoing <- &outgoing{Type: types.MSG, Data: &models.MessageDatas{
+					GetFullMessageDatasRow: messageDatas,
+				}}
+
+
+			case types.DEL:
+				var message db.Message
+
+				if err := json.Unmarshal(incoming.Data, &message); err != nil {
+					log.Println("invalid message: ", err)
+					continue
+				}
+
+				id, chatId, dmId := message.ID, message.ChatroomID, message.DmID
 				
-				c.hub.outgoing <- &outgoing{Type: types.DEL, Data: &models.Message{ID: id, ChatRoomID: roomID}}
+				c.hub.outgoing <- &outgoing{
+					Type: types.DEL, 
+					Data: &db.Message{ID: id, ChatroomID: chatId, DmID: dmId},
+				}
+
+				if err := db.DeleteMessage(context.Background(), id); err != nil {
+					log.Println("couldnt delete the message", err)
+					continue
+				}
 
 
 			case types.NOTIF:
-				var targetUser models.User
+				// fmt.Println("incoming data notif:", string(incoming.Data))
 
-				var notif = &models.Notification{
-					Date: time.Now(),
-				}
+				var notifParams = &db.CreateNotificationParams{}
 
-				if err := json.Unmarshal(incoming.Data, notif); err != nil {
+				if err := json.Unmarshal(incoming.Data, &notifParams); err != nil {
 					log.Println("invalid notification: ", err)
 					continue
 				}
 
-				if err := models.DB.Preload(clause.Associations).First(&targetUser, "username = ?", notif.User.Username).Error; err != nil {
-					log.Println(err)
-					continue
-				}
-
-				if targetUser.CheckUserRelations(user, targetUser.BlockedUsers) {
-					continue
-				}
-
-				notif.User = targetUser
-				notif.NotifFrom = user.ID
-
+				notifParams.NotifFrom = user.ID.String()
 			
-				switch notif.Type {
-					case types.FRIEND_REQ:
-						if targetUser.CheckUserRelations(targetUser, user.SentFriendReqs) {
-							continue
-						}
+				switch notifParams.Type {
+					case "friend_req":
+						notifParams.Message = user.Username + " sent you a friend request"
+						notifParams.Link = "/user/" + user.Username
 
-						notif.Message = user.Username + " sent you a friend request"
-						notif.Link = "/user/" + user.Username
+					case "dm_req":
+						dm, _ := db.Query.GetDMWithBothUsers(context.Background(), db.GetDMWithBothUsersParams{
+							User1ID: user.ID,
+							User2ID: notifParams.UserID,
+						})
 
-					case types.DM_REQ:
-						if targetUser.CheckUserRelations(targetUser, user.DMedUsers) {
-							continue
-						}
+						notifParams.Message = user.Username + " sent you a message request"
+						notifParams.Link = "/dm/" + fmt.Sprint(dm.ID)
 
-						notif.Message = user.Username + " sent you a message request"
-						notif.Link = fmt.Sprintf("/dm/%d", user.GetDMid(targetUser))
-
-					case types.ACCEPT_FRIEND_REQ:
-						if targetUser.CheckUserRelations(targetUser, user.Friends) {
-							continue
-						}
-
-						notif.Message = user.Username + " accepted your friend request"
-						notif.Link = "/user/" + user.Username
+					case "accepted_friend_req":
+						notifParams.Message = user.Username + " accepted your friend request"
+						notifParams.Link = "/user/" + user.Username
 
 					default:
 						continue
 				}
 
-				models.DB.Create(notif)
+				if err := db.Query.CreateNotification(context.Background(), *notifParams); err != nil {
+					log.Println(utils.GetFuncInfo(), err)
+					continue
+				}
 
-				c.hub.outgoing <- &outgoing{Type: types.NOTIF, Data: notif}
+				c.hub.outgoing <- &outgoing{Type: types.NOTIF, Data: notifParams}
 		}
 	}
 }
@@ -304,7 +305,11 @@ func (c *client) writePump() {
 					return
 				}
 
-				c.conn.WriteJSON(outgoing)
+				// fmt.Printf("%#v\n", outgoing.Data)
+
+				if err := c.conn.WriteJSON(outgoing); err != nil {
+					log.Println(utils.GetFuncInfo(), err)
+				}
 
 			case <-time.Tick(time.Minute):
 		}
@@ -312,12 +317,13 @@ func (c *client) writePump() {
 }
 
 
-func (hub *Hub) WSHandler(Type string) http.HandlerFunc {
+func (hub *Hub) WSHandler(Type types.WSMessage) http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
 
 		if err != nil {
-			log.Fatal("error trying to connect to the websocket: ", err)
+			log.Println("error trying to connect to the websocket: ", err)
+			return
 		}
 
 		var client = &client{
@@ -327,18 +333,18 @@ func (hub *Hub) WSHandler(Type string) http.HandlerFunc {
 			Type: Type,
 		}
 
-
 		switch Type {
 			case types.MSG, types.DEL:
 				client.id = r.PathValue("id")
 			case types.NOTIF:
-				userData, err := utils.ParseCookie(r)
+				id, _, err := utils.GetUserID(r)
 
 				if err != nil {
-					log.Fatal("error getting the user datas: ", err)
+					log.Println("couldnt connect the user to the notif ws", err)
+					return
 				}
 
-				client.id = userData.ID
+				client.id = id.String()
 		}
 
 		go client.readPump(r)

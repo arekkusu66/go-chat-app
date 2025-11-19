@@ -3,33 +3,41 @@ package routes
 import (
 	"encoding/json"
 	"fmt"
-	"gochat/models"
+	"gochat/db"
 	"gochat/utils"
+	"log"
 	"net/http"
 	"regexp"
+	"strconv"
 )
 
 
 func NotificationsH(w http.ResponseWriter, r *http.Request) {
-	userData, err := utils.ParseCookie(r)
+	userId, status, err := utils.GetUserID(r)
 
 	if err != nil {
-		http.Error(w, "couldnt retrieve user datas", http.StatusInternalServerError)
+		http.Error(w, err.Error(), status)
 		return
 	}
-
-	var user models.User
-	models.DB.Preload("Notifications").First(&user, "id = ?", userData.ID)
-
 
 	var action = r.URL.Query().Get("action")
 
 	switch action {
 		case "get":
-			json.NewEncoder(w).Encode(&user.Notifications)
-			return
+			notifications, err := db.Query.GetAllNotifications(r.Context(), userId)
+
+			if err == nil {
+				json.NewEncoder(w).Encode(&notifications)
+				return
+			} else {
+				log.Println(utils.GetFuncInfo(), err)
+				json.NewEncoder(w).Encode(&[]db.Notification{})
+				return
+			}
+
 		case "are-there-unread-notifs":
-			w.Write([]byte(fmt.Sprint(user.AreThereUnreadNotifs())))
+			areThereUnreadNotifs, _ := db.Query.AreThereUnreadNotifications(r.Context(), userId)
+			fmt.Fprint(w, fmt.Sprint(areThereUnreadNotifs))
 			return
 	}
 
@@ -41,21 +49,34 @@ func NotificationsH(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var notification models.Notification
-	models.DB.First(&notification, id)
+	intId, _ := strconv.ParseInt(id, 10, 64)
 
-	if notification.UserID != user.ID {
+	notification, err := db.Query.GetNoficationById(r.Context(), intId)
+
+	if err != nil {
+		http.Error(w, "notification not found", http.StatusNotFound)
+		return
+	}
+
+	if notification.UserID != userId {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-
+	
 	switch action {
 		case "mark-as-read":
-			notification.Read = true
-			models.DB.Save(&notification)
+			if err := db.Query.ReadNotification(r.Context(), intId); err != nil {
+				log.Println(utils.GetFuncInfo(), err)
+				http.Error(w, "couldnt update the notification", http.StatusInternalServerError)
+				return
+			}
 
 		case "delete":
-			models.DB.Delete(&notification)
+			if err := db.Query.DeleteAllNotifications(r.Context(), intId); err != nil {
+				log.Println(utils.GetFuncInfo(), err)
+				http.Error(w, "couldnt delete the notification", http.StatusInternalServerError)
+				return
+			}
 	}
 }

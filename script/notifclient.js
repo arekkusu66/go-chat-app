@@ -17,15 +17,13 @@ notifws.onmessage = () => {
 
 
 async function sendNotif(button) {
-    let targetUsername = button.dataset.target;
+    let targetId = button.dataset.target;
     let type = button.dataset.type;
 
     let notification = {
         type: 'NOTIF',
         data: {
-            user: {
-                username: targetUsername
-            },
+            user_id: targetId,
             type: type,
         },
     };
@@ -49,22 +47,25 @@ async function showNotifications() {
 
     const notifications = await response.json();
 
-    if (notifications.length === 0) {
-        notif_c.innerHTML = '<b>no notifications</b>';
-        notif_count.textContent = '';
-        return
-    };
+    if (notifications) {
+        if (notifications.length === 0) {
+            notif_c.innerHTML = '<b>no notifications</b>';
+            notif_count.textContent = '';
+            return
+        };
     
 
-    notifications.map((notif) => {
-        notif_c.innerHTML += `
-        <div id="notif-${notif.id}" style="${notif.read ? 'background-color:rgba(128, 128, 128, 0.5)' : ''}">
-            <h4>${formatDate(notif.date)}</h4>
-            <a href="${notif.link}">${notif.message}</a>
-            <button data-id="${notif.id}" data-action="mark-as-read" onclick="notifAction(this)">Mark as read</button>
-            <button data-id="${notif.id}" data-action="delete" onclick="notifAction(this)">Delete</button>
-        </div>`;
-    });
+        notifications.map((notif) => {
+            notif_c.innerHTML += `
+            <div id="notif-${notif.id}" style="${notif.read ? 'background-color:rgba(128, 128, 128, 0.5)' : ''}">
+                <h4>${formatDate(notif.date)}</h4>
+                <a href="${notif.link}">${notif.message}</a>
+                <button data-id="${notif.id}" data-action="mark-as-read" onclick="notifAction(this)">Mark as read
+                </button>
+                <button data-id="${notif.id}" data-action="delete" onclick="notifAction(this)">Delete</button>
+            </div>`;
+        });
+    };
 };
 
 
@@ -77,7 +78,6 @@ async function notifAction(button) {
     const notif_count = document.querySelector('#notif-count');
     
     try {
-
         if (action === 'mark-as-read') {
             await fetch(`/notifications?id=${id}&action=${action}`, {method: 'POST'});
             notif.style.backgroundColor = 'rgba(128, 128, 128, 0.5)';
