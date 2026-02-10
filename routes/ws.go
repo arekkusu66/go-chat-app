@@ -1,7 +1,6 @@
 package routes
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"gochat/db"
@@ -10,7 +9,6 @@ import (
 	"gochat/utils"
 	"log"
 	"net/http"
-	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -161,11 +159,10 @@ func (hub *Hub) Run() {
 }
 
 
-func (c *client) readPump(r *http.Request) {
+func (c *client) readPump(r *http.Request, w http.ResponseWriter) {
 	defer func() {
 		c.hub.disconnect <- c
 		c.conn.Close()
-		recover()
 	}()
 
 	for {
@@ -179,14 +176,14 @@ func (c *client) readPump(r *http.Request) {
 			break
 		}
 
-		userId, _, err := utils.GetUserID(r)
+		userId, _, err := utils.GetUserID(r, w)
 
 		if err != nil {
 			log.Println(utils.GetFuncInfo(), err)
 			continue
 		}
 
-		user, err := db.Query.GetUserById(context.Background(), userId)
+		user, err := db.Query.GetUserById(r.Context(), userId)
 
 		if err != nil {
 			log.Println(utils.GetFuncInfo(), err)
@@ -194,9 +191,7 @@ func (c *client) readPump(r *http.Request) {
 		}
 
 		switch incoming.Type {
-			case types.MSG:
-				// fmt.Println("incoming msg", string(incoming.Data))
-				
+			case types.MSG:				
 				var message  = &db.CreateMessageParams{
 					UserID: user.ID,
 				}
@@ -206,14 +201,14 @@ func (c *client) readPump(r *http.Request) {
 					continue
 				}
 
-				id, err := db.Query.CreateMessage(context.Background(), *message)
+				id, err := db.Query.CreateMessage(r.Context(), *message)
 
 				if err != nil {
 					log.Println(utils.GetFuncInfo(), err)
 					continue
 				}
 
-				messageDatas, err := db.Query.GetFullMessageDatas(context.Background(), id)
+				messageDatas, err := db.Query.GetFullMessageDatas(r.Context(), id)
 
 				if err != nil {
 					log.Println(utils.GetFuncInfo(), err)
@@ -240,15 +235,13 @@ func (c *client) readPump(r *http.Request) {
 					Data: &db.Message{ID: id, ChatroomID: chatId, DmID: dmId},
 				}
 
-				if err := db.DeleteMessage(context.Background(), id); err != nil {
+				if err := db.DeleteMessage(r.Context(), id); err != nil {
 					log.Println("couldnt delete the message", err)
 					continue
 				}
 
 
 			case types.NOTIF:
-				// fmt.Println("incoming data notif:", string(incoming.Data))
-
 				var notifParams = &db.CreateNotificationParams{}
 
 				if err := json.Unmarshal(incoming.Data, &notifParams); err != nil {
@@ -264,7 +257,7 @@ func (c *client) readPump(r *http.Request) {
 						notifParams.Link = "/user/" + user.Username
 
 					case "dm_req":
-						dm, _ := db.Query.GetDMWithBothUsers(context.Background(), db.GetDMWithBothUsersParams{
+						dm, _ := db.Query.GetDMWithBothUsers(r.Context(), db.GetDMWithBothUsersParams{
 							User1ID: user.ID,
 							User2ID: notifParams.UserID,
 						})
@@ -280,7 +273,7 @@ func (c *client) readPump(r *http.Request) {
 						continue
 				}
 
-				if err := db.Query.CreateNotification(context.Background(), *notifParams); err != nil {
+				if err := db.Query.CreateNotification(r.Context(), *notifParams); err != nil {
 					log.Println(utils.GetFuncInfo(), err)
 					continue
 				}
@@ -297,21 +290,9 @@ func (c *client) writePump() {
 		recover()
 	}()
 
-	for {
-		select {
-			case outgoing, ok := <-c.outgoing:
-				if !ok {
-					c.conn.WriteMessage(websocket.CloseMessage, []byte{})
-					return
-				}
-
-				// fmt.Printf("%#v\n", outgoing.Data)
-
-				if err := c.conn.WriteJSON(outgoing); err != nil {
-					log.Println(utils.GetFuncInfo(), err)
-				}
-
-			case <-time.Tick(time.Minute):
+	for outgoing := range c.outgoing {
+		if err := c.conn.WriteJSON(outgoing); err != nil {
+			log.Println(utils.GetFuncInfo(), err)
 		}
 	}
 }
@@ -337,7 +318,7 @@ func (hub *Hub) WSHandler(Type types.WSMessage) http.HandlerFunc {
 			case types.MSG, types.DEL:
 				client.id = r.PathValue("id")
 			case types.NOTIF:
-				id, _, err := utils.GetUserID(r)
+				id, _, err := utils.GetUserID(r, w)
 
 				if err != nil {
 					log.Println("couldnt connect the user to the notif ws", err)
@@ -347,7 +328,7 @@ func (hub *Hub) WSHandler(Type types.WSMessage) http.HandlerFunc {
 				client.id = id.String()
 		}
 
-		go client.readPump(r)
+		go client.readPump(r, w)
 		go client.writePump()
 
 		client.hub.connect <- client

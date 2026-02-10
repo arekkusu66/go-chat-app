@@ -27,7 +27,6 @@ func InitOauth() {
     	Path:     "/",
     	MaxAge:   86400 * 7,
     	HttpOnly: true,
-    	SameSite: http.SameSiteLaxMode,
 	}
 
 	gothic.Store = store
@@ -103,7 +102,6 @@ func OauthCallbackH(w http.ResponseWriter, r *http.Request) {
 		Value: jwtToken,
 		Path: "/",
 		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
 	}
 
 	http.SetCookie(w, cookie)

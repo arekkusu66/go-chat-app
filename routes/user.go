@@ -17,7 +17,7 @@ func UserPageH(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, _, err := utils.GetUserID(r)
+	id, _, err := utils.GetUserID(r, w)
 
 	if err != nil {
 		pages.UserPage(user, db.User{}).Render(r.Context(), w)
@@ -31,7 +31,7 @@ func UserPageH(w http.ResponseWriter, r *http.Request) {
 
 
 func EditProfileH(w http.ResponseWriter, r *http.Request) {
-	id, status, err := utils.GetUserID(r)
+	id, status, err := utils.GetUserID(r, w)
 
 	if err != nil {
 		http.Error(w, err.Error(), status)
@@ -61,7 +61,7 @@ func EditProfileH(w http.ResponseWriter, r *http.Request) {
 
 
 func EditUsernameH(w http.ResponseWriter, r *http.Request) {
-	id, status, err := utils.GetUserID(r)
+	id, status, err := utils.GetUserID(r, w)
 
 	if err != nil {
 		http.Error(w, err.Error(), status)
@@ -95,7 +95,7 @@ func EditUsernameH(w http.ResponseWriter, r *http.Request) {
 
 
 func UserActionsH(w http.ResponseWriter, r *http.Request) {
-	id, status, err := utils.GetUserID(r)
+	id, status, err := utils.GetUserID(r, w)
 
 	if err != nil {
 		http.Error(w, err.Error(), status)

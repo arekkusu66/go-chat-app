@@ -12,7 +12,7 @@ import (
 
 
 func DMchatroomH(w http.ResponseWriter, r *http.Request) {
-	id, status, err := utils.GetUserID(r)
+	id, status, err := utils.GetUserID(r, w)
 
 	if err != nil {
 		http.Error(w, err.Error(), status)
@@ -26,7 +26,7 @@ func DMchatroomH(w http.ResponseWriter, r *http.Request) {
 
 
 func DMH(w http.ResponseWriter, r *http.Request) {
-	userId, status, err := utils.GetUserID(r)
+	userId, status, err := utils.GetUserID(r, w)
 
 	if err != nil {
 		http.Error(w, err.Error(), status)
@@ -66,7 +66,7 @@ func DMH(w http.ResponseWriter, r *http.Request) {
 
 
 func DMactionH(w http.ResponseWriter, r *http.Request) {
-	userId, status, err := utils.GetUserID(r)
+	userId, status, err := utils.GetUserID(r, w)
 
 	if err != nil {
 		http.Error(w, err.Error(), status)

@@ -11,7 +11,7 @@ import (
 
 
 func SettingsH(w http.ResponseWriter, r *http.Request) {
-	id, status, err := utils.GetUserID(r)
+	id, status, err := utils.GetUserID(r, w)
 
 	if err != nil {
 		http.Error(w, err.Error(), status)

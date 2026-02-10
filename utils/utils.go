@@ -49,12 +49,10 @@ func refreshToken(jwtToken string) (string, error) {
 	})
 
 	if err != nil {
-		if err.Error() != "Token is expired" {
-			return NewJWT(claims.ID)
-		}
+		return NewJWT(claims.ID)
 	}
 
-	if claims.ExpiresAt != nil && claims.ExpiresAt.Time.After(time.Now()) {
+	if claims.ExpiresAt != nil && claims.ExpiresAt.Time.Before(time.Now()) {
 		return NewJWT(claims.ID)
 	}
 
@@ -66,7 +64,7 @@ func refreshToken(jwtToken string) (string, error) {
 }
 
 
-func parseCookie(r *http.Request) (*Claims, error) {
+func parseCookie(r *http.Request, w http.ResponseWriter) (*Claims, error) {
 	tokenData, err := r.Cookie("token")
 
 	if err != nil {
@@ -75,6 +73,13 @@ func parseCookie(r *http.Request) (*Claims, error) {
 	}
 
 	tokenString, err := refreshToken(tokenData.Value)
+
+	http.SetCookie(w, &http.Cookie{
+		Name: "token",
+		Value: tokenString,
+		Path: "/",
+		HttpOnly: true,
+	})
 
 	if err != nil {
 		log.Println("couldnt refresh token", err)
@@ -94,8 +99,8 @@ func parseCookie(r *http.Request) (*Claims, error) {
 }
 
 
-func GetUserID(r *http.Request) (uuid.UUID, int, error) {
-	userDatas, err := parseCookie(r)
+func GetUserID(r *http.Request, w http.ResponseWriter) (uuid.UUID, int, error) {
+	userDatas, err := parseCookie(r, w)
 
 	if err != nil || userDatas.ID == uuid.Nil {
 		return uuid.UUID{}, http.StatusInternalServerError, errors.New("couldnt retrieve the user datas")
@@ -107,9 +112,9 @@ func GetUserID(r *http.Request) (uuid.UUID, int, error) {
 func ServeDir(dirname string, mux *http.ServeMux) {
 	mux.Handle(
 		fmt.Sprintf("%s/", dirname), 
-		http.StripPrefix(fmt.Sprintf("%s/", dirname), 
-		http.FileServer(
-			http.Dir(fmt.Sprintf(".%s", dirname)))))
+		http.StripPrefix(fmt.Sprintf("%s/", dirname),
+		http.FileServer(http.Dir(fmt.Sprintf(".%s", dirname)))),
+	)
 }
 
 

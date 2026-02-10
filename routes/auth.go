@@ -15,7 +15,6 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-
 var providers = []string{"google", "discord"}
 
 
@@ -74,7 +73,6 @@ func SignUpH(w http.ResponseWriter, r *http.Request) {
 			Value: jwtToken,
 			Path: "/",
 			HttpOnly: true,
-			SameSite: http.SameSiteLaxMode,
 		}
 
 		http.SetCookie(w, cookie)
@@ -83,7 +81,7 @@ func SignUpH(w http.ResponseWriter, r *http.Request) {
 	}
 	
 
-	if _, _, err := utils.GetUserID(r); err != nil {
+	if _, _, err := utils.GetUserID(r, w); err != nil {
 		pages.Login(false, "signup", providers).Render(r.Context(), w)
 		return
 	}
@@ -125,7 +123,7 @@ func LoginH(w http.ResponseWriter, r *http.Request) {
 				Value: jwtToken,
 				Path: "/",
 				HttpOnly: true,
-				SameSite: http.SameSiteLaxMode,
+
 			}
 		
 			http.SetCookie(w, cookie)
@@ -134,7 +132,7 @@ func LoginH(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if _, _, err := utils.GetUserID(r); err != nil {
+	if _, _, err := utils.GetUserID(r, w); err != nil {
 		pages.Login(false, "login", providers).Render(r.Context(), w)
 		return
 	}
@@ -151,7 +149,6 @@ func LogOffH(w http.ResponseWriter, r *http.Request) {
 		Expires: time.Unix(0, 0),
 		MaxAge: -1,
 		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
 	}
 
 	http.SetCookie(w, cookie)
@@ -159,7 +156,7 @@ func LogOffH(w http.ResponseWriter, r *http.Request) {
 
 
 func EmailVerificationSendH(w http.ResponseWriter, r *http.Request) {
-	id, status, err := utils.GetUserID(r)
+	id, status, err := utils.GetUserID(r, w)
 
 	if err != nil {
 		http.Error(w, err.Error(), status)
@@ -204,7 +201,7 @@ func EmailVerificationSendH(w http.ResponseWriter, r *http.Request) {
 
 
 func EmailVerificationH(w http.ResponseWriter, r *http.Request) {
-	id, status, err := utils.GetUserID(r)
+	id, status, err := utils.GetUserID(r, w)
 
 	if err != nil {
 		http.Error(w, err.Error(), status)
@@ -265,7 +262,7 @@ func EmailVerificationH(w http.ResponseWriter, r *http.Request) {
 
 
 func PasswordResetH(w http.ResponseWriter, r *http.Request) {
-	id, status, err := utils.GetUserID(r)
+	id, status, err := utils.GetUserID(r, w)
 
 	if err != nil {
 		http.Error(w, err.Error(), status)
@@ -299,7 +296,7 @@ func PasswordResetH(w http.ResponseWriter, r *http.Request) {
 
 
 func PasswordNewH(w http.ResponseWriter, r *http.Request) {
-	id, status, err := utils.GetUserID(r)
+	id, status, err := utils.GetUserID(r, w)
 
 	if err != nil {
 		http.Error(w, err.Error(), status)

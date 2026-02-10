@@ -18,7 +18,7 @@ import (
 func CreateChatH(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	id, status, err := utils.GetUserID(r)
+	id, status, err := utils.GetUserID(r, w)
 
 	if err != nil {
 		http.Error(w, err.Error(), status)
@@ -39,7 +39,7 @@ func CreateChatH(w http.ResponseWriter, r *http.Request) {
 
 	createdChatsCount, _ := db.Query.GetCreatedChatroomsCount(r.Context(), user.ID)
 
-	if createdChatsCount  >= 30 {
+	if createdChatsCount >= 30 {
 		http.Error(w, "cannot create more than 30 chatrooms", http.StatusBadRequest)
 		return
 	}
@@ -58,7 +58,7 @@ func CreateChatH(w http.ResponseWriter, r *http.Request) {
 
 
 func ChatH(w http.ResponseWriter, r *http.Request) {
-	userId, status, err := utils.GetUserID(r)
+	userId, status, err := utils.GetUserID(r, w)
 
 	if err != nil {
 		http.Error(w, err.Error(), status)
@@ -90,7 +90,7 @@ func ChatH(w http.ResponseWriter, r *http.Request) {
 
 
 func ChatActionsH(w http.ResponseWriter, r *http.Request) {
-	userId, status, err := utils.GetUserID(r)
+	userId, status, err := utils.GetUserID(r, w)
 
 	if err != nil {
 		http.Error(w, err.Error(), status)
@@ -155,7 +155,7 @@ func ChatActionsH(w http.ResponseWriter, r *http.Request) {
 
 
 func GetOptionsH(w http.ResponseWriter, r *http.Request) {
-	userId, status, err := utils.GetUserID(r)
+	userId, status, err := utils.GetUserID(r, w)
 
 	if err != nil {
 		http.Error(w, err.Error(), status)
@@ -191,7 +191,7 @@ func GetOptionsH(w http.ResponseWriter, r *http.Request) {
 
 
 func GetMessageH(w http.ResponseWriter, r *http.Request) {
-	userId, status, err := utils.GetUserID(r)
+	userId, status, err := utils.GetUserID(r, w)
 
 	if err != nil {
 		http.Error(w, err.Error(), status)

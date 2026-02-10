@@ -10,7 +10,7 @@ import (
 
 
 func HomeH(w http.ResponseWriter, r *http.Request) {
-	id, _, err := utils.GetUserID(r)
+	id, _, err := utils.GetUserID(r, w)
 
 	if err != nil {
 		log.Println(utils.GetFuncInfo(), "couldnt get the user datas: ", err)

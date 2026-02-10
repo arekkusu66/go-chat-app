@@ -136,7 +136,7 @@ WHERE c.id = $1;
 -- name: GetAllJoinedUsers :many
 SELECT u.*
 FROM chatrooms c
-INNER JOIN user_joined_chatrooms ujc ON ujc.chat_id = c.id
+INNER JOIN user_joined_chatrooms ujc ON ujc.chatroom_id = c.id
 INNER JOIN users u ON u.id = ujc.user_id
 WHERE c.id = $1;
 

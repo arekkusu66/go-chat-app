@@ -502,7 +502,7 @@ func (q *Queries) GetAllDMsWithStatus(ctx context.Context, arg GetAllDMsWithStat
 const getAllJoinedUsers = `-- name: GetAllJoinedUsers :many
 SELECT u.id, u.provider_id, u.username, u.email, u.password, u.join_date, u.verified, u.description
 FROM chatrooms c
-INNER JOIN user_joined_chatrooms ujc ON ujc.chat_id = c.id
+INNER JOIN user_joined_chatrooms ujc ON ujc.chatroom_id = c.id
 INNER JOIN users u ON u.id = ujc.user_id
 WHERE c.id = $1
 `

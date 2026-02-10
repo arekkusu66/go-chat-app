@@ -13,7 +13,7 @@ import (
 
 
 func NotificationsH(w http.ResponseWriter, r *http.Request) {
-	userId, status, err := utils.GetUserID(r)
+	userId, status, err := utils.GetUserID(r, w)
 
 	if err != nil {
 		http.Error(w, err.Error(), status)

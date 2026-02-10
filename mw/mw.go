@@ -1,81 +1,49 @@
 package mw
 
 import (
-	"gochat/db"
 	"gochat/utils"
 	"net/http"
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
+	"golang.org/x/time/rate"
 )
 
 
-type rateLimiter struct {
-	bucket				chan struct{}
-}
+var clients sync.Map
 
 
-func newRateLimiter(duration time.Duration) *rateLimiter {
-	var rl = &rateLimiter{
-		bucket: make(chan struct{}, 1),
+func newRateLimiter(id string, t time.Duration) *rate.Limiter {
+	if limiter, ok := clients.Load(id); ok {
+		return limiter.(*rate.Limiter)
 	}
 
-	rl.bucket <- struct{}{}
+	var limiter = rate.NewLimiter(rate.Every(t), 1)
 
-	go func() {
-		var ticker = time.NewTicker(duration)
-		defer ticker.Stop()
+	actual, _ := clients.LoadOrStore(id, limiter)
 
-		for {
-			<-ticker.C
-			select {
-				case rl.bucket <- struct{}{}:
-				default:
-			}
-		}
-	}()
-
-	return rl
+	return actual.(*rate.Limiter)
 }
 
 
-func RateLimiter(handle http.HandlerFunc, duration time.Duration) http.HandlerFunc {
-	var (
-		mu			sync.Mutex
-		clients	 =	make(map[uuid.UUID]*rateLimiter)
-	)
-
+func RateLimiter(handle http.HandlerFunc, t time.Duration) http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
-			id, status, err := utils.GetUserID(r)
+			id, status, err := utils.GetUserID(r, w)
 
 			if err != nil {
 				http.Error(w, err.Error(), status)
 				return
 			}
 
-			user, _ := db.Query.GetUserById(r.Context(), id)
-	
-			mu.Lock()
-	
-			rl, found := clients[user.ID]
+			var limiter = newRateLimiter(id.String(), t)
 
-			if !found {
-				rl = newRateLimiter(duration)
-				clients[user.ID] = rl
+			if !limiter.Allow() {
+				http.Error(w, "too many requests", http.StatusTooManyRequests)
+				return
 			}
-	
-			mu.Unlock()
 
-			select {
-				case <-rl.bucket:
-					handle.ServeHTTP(w, r)
-					return
-				default:
-					w.WriteHeader(http.StatusTooManyRequests)
-					return
-			}
+			handle.ServeHTTP(w, r)
 
 		} else {
 			handle.ServeHTTP(w, r)
