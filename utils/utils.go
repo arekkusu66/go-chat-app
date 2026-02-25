@@ -23,6 +23,10 @@ import (
 	"gopkg.in/gomail.v2"
 )
 
+
+var ErrNoCookie = errors.New("no cookie present")
+
+
 type Claims struct {
 	ID	uuid.UUID
 	jwt.RegisteredClaims
@@ -41,30 +45,7 @@ func NewJWT(id uuid.UUID) (string, error) {
 }
 
 
-func refreshToken(jwtToken string) (string, error) {
-	var claims = &Claims{}
-
-	token, err := jwt.ParseWithClaims(jwtToken, claims, func(t *jwt.Token) (any, error) {
-		return []byte(os.Getenv("JWT_SECRET")), nil
-	})
-
-	if err != nil {
-		return NewJWT(claims.ID)
-	}
-
-	if claims.ExpiresAt != nil && claims.ExpiresAt.Time.Before(time.Now()) {
-		return NewJWT(claims.ID)
-	}
-
-	if token != nil && token.Valid {
-		return jwtToken, nil
-	}
-
-	return "", errors.New("invalid token")
-}
-
-
-func parseCookie(r *http.Request, w http.ResponseWriter) (*Claims, error) {
+func refreshToken(r *http.Request, w http.ResponseWriter) (*Claims, error) {
 	tokenData, err := r.Cookie("token")
 
 	if err != nil {
@@ -72,35 +53,42 @@ func parseCookie(r *http.Request, w http.ResponseWriter) (*Claims, error) {
 		return nil, err
 	}
 
-	tokenString, err := refreshToken(tokenData.Value)
+	var claims = &Claims{}
 
-	http.SetCookie(w, &http.Cookie{
-		Name: "token",
-		Value: tokenString,
-		Path: "/",
-		HttpOnly: true,
-	})
-
-	if err != nil {
-		log.Println("couldnt refresh token", err)
-		return nil, err
-	}
-
-	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(t *jwt.Token) (any, error) {
+	token, err := jwt.ParseWithClaims(tokenData.Value, claims, func(t *jwt.Token) (any, error) {
 		return []byte(os.Getenv("JWT_SECRET")), nil
 	})
 
 	if err != nil {
-		log.Println("couldnt parse the token", err)
+		if errors.Is(err, jwt.ErrTokenExpired) {
+			newToken, err := NewJWT(claims.ID)
+
+			if err != nil {
+				return nil, err
+			}
+
+			http.SetCookie(w, &http.Cookie{
+				Name: "token",
+				Value: newToken,
+				Path: "/",
+			})
+
+			return claims, nil
+		}
+
 		return nil, err
 	}
 
-	return token.Claims.(*Claims), nil
+	if !token.Valid {
+		return nil, errors.New("invalid token")
+	}
+
+	return claims, nil
 }
 
 
 func GetUserID(r *http.Request, w http.ResponseWriter) (uuid.UUID, int, error) {
-	userDatas, err := parseCookie(r, w)
+	userDatas, err := refreshToken(r, w)
 
 	if err != nil || userDatas.ID == uuid.Nil {
 		return uuid.UUID{}, http.StatusInternalServerError, errors.New("couldnt retrieve the user datas")
