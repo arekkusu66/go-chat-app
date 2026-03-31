@@ -24,9 +24,6 @@ import (
 )
 
 
-var ErrNoCookie = errors.New("no cookie present")
-
-
 type Claims struct {
 	ID	uuid.UUID
 	jwt.RegisteredClaims
