@@ -1,4 +1,4 @@
-const notif_url = `ws://${window.location.host}/notif/ws`;
+const notif_url = `ws://${window.location.host}/ws/notif/1`;
 const notifws = new WebSocket(notif_url);
 
 
@@ -18,13 +18,13 @@ notifws.onmessage = () => {
 
 async function sendNotif(button) {
     let targetId = button.dataset.target;
-    let type = button.dataset.type;
+    let kind = button.dataset.kind;
 
     let notification = {
-        type: 'NOTIF',
+        kind: 'notif',
         data: {
             user_id: targetId,
-            type: type,
+            kind: kind,
         },
     };
 

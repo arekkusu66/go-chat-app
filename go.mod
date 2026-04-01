@@ -10,7 +10,12 @@ require (
 	gopkg.in/gomail.v2 v2.0.0-20160411212932-81ebce5c23df
 )
 
-require gopkg.in/alexcesaro/quotedprintable.v3 v3.0.0-20150716171945-2caba252f4dc // indirect
+require (
+	github.com/klauspost/compress v1.18.5 // indirect
+	github.com/nats-io/nkeys v0.4.15 // indirect
+	github.com/nats-io/nuid v1.0.1 // indirect
+	gopkg.in/alexcesaro/quotedprintable.v3 v3.0.0-20150716171945-2caba252f4dc // indirect
+)
 
 require (
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
@@ -29,6 +34,7 @@ require (
 	github.com/gorilla/sessions v1.4.0
 	github.com/jackc/pgx/v5 v5.9.1
 	github.com/joho/godotenv v1.5.1
+	github.com/nats-io/nats.go v1.50.0
 	golang.org/x/crypto v0.49.0
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/text v0.35.0 // indirect

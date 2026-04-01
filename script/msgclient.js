@@ -1,9 +1,9 @@
 const msgurl = new URL(window.location.href);
 const path = msgurl.pathname.match(/\/(chat|dm)\/(\d+)/);
-const type = path[1];
+const chatKind = path[1];
 const id = path[2];
 
-const wsurl = `ws://${window.location.host}/msg/ws/` + id;
+const wsurl = `ws://${window.location.host}/ws/msg/` + id;
 const msgws = new WebSocket(wsurl);
 
 
@@ -20,12 +20,12 @@ msgws.onerror = (error) => {
 msgws.onmessage = (e) => {
     let message = JSON.parse(e.data);
 
-    switch (message.type) {
-        case 'MSG':
+    switch (message.kind) {
+        case 'msg':
             addMessage(message.data);
             break;
 
-        case 'DEL':
+        case 'del':
             document.querySelector(`#message-c-${message.data.id}`).remove();
 
             Array.from(document.querySelectorAll(`#reply-${message.data.id}`))
@@ -48,7 +48,7 @@ function sendMsg() {
     };
     
     let msg = {
-        type: 'MSG',
+        kind: 'msg',
         data: {
             text: message.value,
             reply_status: 'no_reply',
@@ -58,7 +58,7 @@ function sendMsg() {
     msg.data.reply_id = reply_id.textContent != '' ? 
         {Int64: parseInt(reply_id.textContent), Valid: true} : null;
 
-    switch (type) {
+    switch (chatKind) {
         case 'chat':
             msg.data.chatroom_id = {Int64: parseInt(id), Valid: true};
             break;
@@ -158,11 +158,11 @@ function deleteMsg(button) {
     const btnID = button.dataset.id;
 
     let msg = {
-        type: 'DEL',
+        kind: 'del',
         data: {id: parseInt(btnID)},
     };
 
-    switch (type) {
+    switch (chatKind) {
         case 'chat':
             msg.data.chatroom_id = {Int64: parseInt(id), Valid: true};
             break;
